@@ -1,0 +1,5 @@
+(import ./jwl :as wl)
+(def d (wl/display/connect))
+(:roundtrip d)
+(:disconnect d)
+(:roundtrip d)
