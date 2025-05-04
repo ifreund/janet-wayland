@@ -65,13 +65,15 @@ static int jwl_proxy_get(void *p, Janet key, Janet *out) {
 static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {
 	struct jwl_proxy *j = p;
 	if (j->wl == NULL) {
-		janet_buffer_push_cstring(buffer, "invalid");
+		janet_buffer_push_cstring(buffer, "(invalid)");
 	} else {
+		janet_buffer_push_u8(buffer, '(');
 		janet_buffer_push_cstring(buffer, wl_proxy_get_class(j->wl));
 		janet_buffer_push_u8(buffer, '#');
 		char id[32];
 		snprintf(id, sizeof(id), "%" PRIu32, wl_proxy_get_id(j->wl));
 		janet_buffer_push_cstring(buffer, id);
+		janet_buffer_push_u8(buffer, ')');
 	}
 }
 
