@@ -423,10 +423,6 @@ static int jwl_proxy_get(void *p, Janet key, Janet *out) {
 	}
 
 	JanetKeyword method = janet_unwrap_keyword(key);
-	if (janet_cstrcmp(method, "send") == 0) {
-		*out = j->send;
-		return 1;
-	}
 
 	if (janet_getmethod(method, jwl_proxy_methods, out)) {
 		return 1;
@@ -436,11 +432,14 @@ static int jwl_proxy_get(void *p, Janet key, Janet *out) {
 		janet_panic("proxy invalid");
 	}
 	if (wl_proxy_get_interface(j->wl) == &wl_display_interface) {
-		return janet_getmethod(method, jwl_display_methods, out);
-	} else {
-		return 0;
-
+		if (janet_getmethod(method, jwl_display_methods, out)) {
+			return 1;
+		}
 	}
+
+	Janet args[1] = { key };
+	*out = janet_call(janet_unwrap_function(j->send), 1, args);
+	return 1;
 }
 
 static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {

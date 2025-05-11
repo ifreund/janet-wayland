@@ -10,8 +10,8 @@
       :events [{:name "done"
                 :signature "u"
                 :types [nil]}]
-      :send (fn [callback & request]
-              (match request
+      :send (fn [request]
+              (case request
                 (errorf "unknown request %v" request)))})
 
 (put interfaces
@@ -30,10 +30,10 @@
                {:name "delete_id"
                 :signature "u"
                 :types [nil]}]
-      :send (fn [display & request]
-              (match request
-                [:sync] (:send-raw display interfaces 0 "wl_callback" 1 {} [nil])
-                [:get-registry] (:send-raw display interfaces 1 "wl_registry" 1 {} [nil])
+      :send (fn [request]
+              (case request
+                :sync (fn [display] (:send-raw display interfaces 0 "wl_callback" 1 {} [nil]))
+                :get-registry (fn [display] (:send-raw display interfaces 1 "wl_registry" 1 {} [nil]))
                 (errorf "unknown request %v" request)))})
 
 (put interfaces
@@ -49,10 +49,11 @@
                {:name "global_remove"
                 :signature "u"
                 :types [nil]}]
-      :send (fn [registry & request]
-              (match request
-                [:bind name interface version] (:send-raw registry interfaces 0 interface version {}
-                                                          [name interface version nil])
+      :send (fn [request]
+              (case request
+                :bind (fn [registry name interface version]
+                        (:send-raw registry interfaces 0 interface version {}
+                                   [name interface version nil]))
                 (errorf "unknown request %v" request)))})
 
 (defn display/connect

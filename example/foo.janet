@@ -2,7 +2,7 @@
 
 (def display (wl/display/connect))
 
-(def registry (:send display :get-registry))
+(def registry (:get-registry display)
 
 (pp registry)
 
