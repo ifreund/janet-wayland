@@ -1,4 +1,4 @@
-(import ../../src/wayland :as wl)
+(import ../src/wayland :as wl)
 
 (wl/scan "/usr/share/wayland/wayland.xml")
 (wl/scan "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml")
