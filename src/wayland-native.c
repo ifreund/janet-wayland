@@ -301,7 +301,6 @@ static const struct wl_interface *jwl_get_wl_interface(JanetTable *interfaces,
 	if (janet_checktype(existing, JANET_POINTER)) {
 		return janet_unwrap_pointer(existing);
 	}
-	janet_table_put(wl_interfaces, namev, janet_wrap_true());
 
 	jwl_check_interface(interfaces, wl_interfaces, namev);
 
@@ -353,6 +352,9 @@ JANET_FN(jwl_proxy_send_raw,
 	const struct wl_interface *wl_interface = NULL;
 	if (interface_name != NULL) {
 		wl_interface = jwl_get_wl_interface(display->interfaces, display->wl_interfaces, interface_name);
+		if (version == 0) {
+			version = wl_proxy_get_version(j->wl);
+		}
 	}
 
 	uint32_t wl_flags = 0;
@@ -451,6 +453,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	assert(j->wl == wl);
 
 	Janet eventvs[WL_CLOSURE_MAX_ARGS + 1];
+	// TODO use kebab-case
 	eventvs[0] = janet_ckeywordv(msg->name);
 
 	int32_t i = 0;

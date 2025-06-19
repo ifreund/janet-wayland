@@ -1,57 +1,89 @@
 (import ./wayland-native :prefix "" :export true)
+(import lemongrass)
 
 (def- interfaces @{})
 
-(put interfaces
-     :wl_callback
-     {:version 1
-      :requests []
-      :events [{:name "done"
-                :signature "u"
-                :types [nil]}]
-      :send (fn [request]
-              (case request
-                (errorf "unknown request %v" request)))})
+(defn- scan-get-signature [[_ attrs & _]]
+  (string/join
+    [(case (attrs :allow-null)
+       "true" "?"
+       "false" ""
+       nil ""
+       (errorf "invalid allow-null value %v" (attrs :allow-null)))
+     (case (attrs :type)
+       "int" "i"
+       "uint" "u"
+       "fixed" "f"
+       "string" "s"
+       "object" "o"
+       "new_id" (if (attrs :interface) "n" "sun")
+       "array" "a"
+       "fd" "h"
+       (errorf "unknown arg type %v" (attrs :type)))]))
 
-(put interfaces
-     :wl_display
-     {:version 1
-      :requests [{:name "sync"
-                  :signature "o"
-                  :types [:wl_callback]}
-                 {:name "get_registry"
-                  :signature "n"
-                  :types [:wl_registry]}]
-      :events [{:name "error"
-                :signature "ous"
-                :types [nil nil nil]}
-               {:name "delete_id"
-                :signature "u"
-                :types [nil]}]
-      :send (fn [request]
-              (case request
-                :sync (fn [display] (:send-raw display 0 :wl_callback 1 {} [nil]))
-                :get-registry (fn [display] (:send-raw display 1 :wl_registry 1 {} [nil]))
-                (errorf "unknown request %v" request)))})
+(defn- scan-get-types [[_ attrs & _]]
+  (case (attrs :type)
+    "object" (if-let [i (attrs :interface)] [(keyword i)])
+    "new_id" (if-let [i (attrs :interface)] [(keyword i)] [nil nil nil])
+    [nil]))
 
-(put interfaces
-     :wl_registry
-     {:version 1
-      :requests [{:name "bind"
-                  :signature "usun"
-                  :types [nil nil nil nil]}]
-      :events [{:name "global"
-                :signature "usu"
-                :types [nil nil nil]}
-               {:name "global_remove"
-                :signature "u"
-                :types [nil]}]
-      :send (fn [request]
-              (case request
-                :bind (fn [registry name interface version]
-                        (:send-raw registry 0 (keyword interface) version {}
-                                   [name interface version nil]))
-                (errorf "unknown request %v" request)))})
+(defn- scan-message [[_ attrs & message]]
+  (def args (filter |(= (first $) :arg) message))
+  {:name (attrs :name)
+   :signature (string (or (attrs :since) "")
+                      (string/join (map scan-get-signature args)))
+   :types (tuple/brackets ;(mapcat scan-get-types args))})
+
+(defn- scan-send-args [[_ attrs & _]]
+  (case (attrs :type)
+    "object" [nil]
+    "new_id" (if (attrs :interface) [nil] ['interface 'version nil])
+    [(symbol (attrs :name))]))
+
+(defn- scan-send-case [[_ attrs & request] opcode]
+  (def args (filter |(= (first $) :arg) request))
+  (def generic-constructor (find (fn [[_ attrs & _]]
+                                   (and (= (attrs :type) "new_id")
+                                        (not (attrs :interface)))) args))
+  (def constructor (find (fn [[_ attrs & _]]
+                           (= (attrs :type) "new_id")) args))
+  # TODO use kebab-case
+  [(keyword (attrs :name))
+   ~(fn [object ,;(filter truthy? (mapcat scan-send-args args))]
+      (:send-raw object
+                 ,opcode
+                 ,(cond
+                    generic-constructor '(keyword interface)
+                    constructor ~(keyword ,((get constructor 1) :interface)))
+                 ,(if generic-constructor 'version 0)
+                 ,(if (= (attrs :type) "destructor") {:destroy true} {})
+                 ,(tuple/brackets ;(mapcat scan-send-args args))))])
+
+# TODO enums?
+(defn- scan-interface [[_ attrs & interface]]
+  (def requests (filter |(= (first $) :request) interface))
+  (def events (filter |(= (first $) :event) interface))
+  # Wrap put in a function that captures our private interfaces table
+  ((fn [k v] (put interfaces k v))
+    (keyword (attrs :name))
+    ~{:version ,(assert (scan-number (attrs :version)))
+      :requests ,(tuple/brackets ;(map scan-message requests))
+      :events ,(tuple/brackets ;(map scan-message events))
+      :send ,(eval ~(fn [request]
+                      (case request
+                        ,;(mapcat scan-send-case requests (range (length requests)))
+                        (errorf "unknown request %v" request))))}))
+
+(defn- scan-protocol [[_ attrs & protocol]]
+  (->> protocol
+       (filter |(= (first $) :interface))
+       (map scan-interface)))
+
+(defmacro scan [path]
+  ~(upscope
+     ,;(->> (lemongrass/markup->janet (slurp path))
+            (filter |(= (first $) :protocol))
+            (mapcat scan-protocol))))
 
 (defn display/connect
   [&opt name]
