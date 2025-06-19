@@ -36,7 +36,6 @@
 
 (defn- scan-send-args [[_ attrs & _]]
   (case (attrs :type)
-    "object" [nil]
     "new_id" (if (attrs :interface) [nil] ['interface 'version nil])
     [(symbol (attrs :name))]))
 

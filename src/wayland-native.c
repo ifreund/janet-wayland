@@ -103,9 +103,22 @@ JANET_FN(jwl_display_roundtrip,
 	return janet_wrap_nil();
 }
 
+JANET_FN(jwl_display_dispatch,
+		"(wl/display/dispatch display)",
+		"wl_display_dispatch") {
+	janet_fixarity(argc, 1);
+	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
+	if (j->wl == NULL) {
+		janet_panic("proxy invalid");
+	}
+	wl_display_dispatch((struct wl_display *)j->wl);
+	return janet_wrap_nil();
+}
+
 JanetMethod jwl_display_methods[] = {
 	{"disconnect", jwl_display_disconnect },
 	{"roundtrip", jwl_display_roundtrip },
+	{"dispatch", jwl_display_dispatch },
 	{NULL, NULL},
 };
 
@@ -378,6 +391,7 @@ JANET_FN(jwl_proxy_send_raw,
 		signature = jwl_signature_iter(signature, &type, &allow_null);
 		switch (type) {
 		case 'i':
+			wl_args[i] = (union wl_argument){ .i = janet_getinteger(args, i)  };
 			break;
 		case 'u':
 			wl_args[i] = (union wl_argument){ .u = janet_getuinteger(args, i)  };
