@@ -21,7 +21,7 @@
 
 (defn- scan-get-types [[_ attrs & _]]
   (case (attrs :type)
-    "object" (if-let [i (attrs :interface)] [(keyword i)])
+    "object" (if-let [i (attrs :interface)] [(keyword i)] [nil])
     "new_id" (if-let [i (attrs :interface)] [(keyword i)] [nil nil nil])
     [nil]))
 
