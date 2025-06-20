@@ -1,65 +1,68 @@
 (import ../src/wayland :as wl)
 
-(wl/scan "/usr/share/wayland/wayland.xml")
-(wl/scan "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml")
-(wl/scan "/usr/share/wayland-protocols/stable/viewporter/viewporter.xml")
-(wl/scan "/usr/share/wayland-protocols/staging/single-pixel-buffer/single-pixel-buffer-v1.xml")
+(def interfaces
+  (wl/scan "/usr/share/wayland/wayland.xml"
+           "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml"
+           "/usr/share/wayland-protocols/stable/viewporter/viewporter.xml"
+           "/usr/share/wayland-protocols/staging/single-pixel-buffer/single-pixel-buffer-v1.xml"))
 
-(def display (wl/display/connect))
 
-(var compositor nil)
-(var viewporter nil)
-(var wm-base nil)
-(var single-pixel-buffer-man nil)
+(defn main [&]
+  (def display (wl/display/connect interfaces))
 
-(def registry (:get_registry display))
-(:set-listener registry
-               (fn [event]
-                 (match event
-                   [:global name interface version]
-                   (case interface
-                     "wl_compositor" (set compositor (:bind registry name interface 1))
-                     "wp_viewporter" (set viewporter (:bind registry name interface 1))
-                     "xdg_wm_base" (set wm-base (:bind registry name interface 1))
-                     "wp_single_pixel_buffer_manager_v1" (set single-pixel-buffer-man (:bind registry name interface 1))))))
+  (var compositor nil)
+  (var viewporter nil)
+  (var wm-base nil)
+  (var single-pixel-buffer-man nil)
 
-(:roundtrip display)
+  (def registry (:get_registry display))
+  (:set-listener registry
+                 (fn [event]
+                   (match event
+                     [:global name interface version]
+                     (case interface
+                       "wl_compositor" (set compositor (:bind registry name interface 1))
+                       "wp_viewporter" (set viewporter (:bind registry name interface 1))
+                       "xdg_wm_base" (set wm-base (:bind registry name interface 1))
+                       "wp_single_pixel_buffer_manager_v1" (set single-pixel-buffer-man (:bind registry name interface 1))))))
 
-(assert compositor)
-(assert viewporter)
-(assert wm-base)
-(assert single-pixel-buffer-man)
+  (:roundtrip display)
 
-(def buffer (:create_u32_rgba_buffer single-pixel-buffer-man 0 (- (math/pow 2 32) 1) 0 (- (math/pow 2 32) 1)))
-(def surface (:create_surface compositor))
-(def viewport (:get_viewport viewporter surface))
-(def xdg-surface (:get_xdg_surface wm-base surface))
-(def xdg-toplevel (:get_toplevel xdg-surface))
+  (assert compositor)
+  (assert viewporter)
+  (assert wm-base)
+  (assert single-pixel-buffer-man)
 
-(:set-listener xdg-surface
-               (fn [event]
-                 (match event
-                   [:configure serial] (do
-                                         (:ack_configure xdg-surface serial)
-                                         (:commit surface)))))
+  (def buffer (:create_u32_rgba_buffer single-pixel-buffer-man 0 (- (math/pow 2 32) 1) 0 (- (math/pow 2 32) 1)))
+  (def surface (:create_surface compositor))
+  (def viewport (:get_viewport viewporter surface))
+  (def xdg-surface (:get_xdg_surface wm-base surface))
+  (def xdg-toplevel (:get_toplevel xdg-surface))
 
-(var running true)
-(:set-listener xdg-toplevel
-               (fn [event]
-                 (match event
-                   [:configure w h] (let [w (if (= w 0) 42 w)
-                                          h (if (= h 0) 42 h)]
-                                      (:set_destination viewport w h)
-                                      (:commit surface))
-                   [:close] (set running false))))
+  (:set-listener xdg-surface
+                 (fn [event]
+                   (match event
+                     [:configure serial] (do
+                                           (:ack_configure xdg-surface serial)
+                                           (:commit surface)))))
 
-(:commit surface)
-(:roundtrip display)
+  (var running true)
+  (:set-listener xdg-toplevel
+                 (fn [event]
+                   (match event
+                     [:configure w h] (let [w (if (= w 0) 42 w)
+                                            h (if (= h 0) 42 h)]
+                                        (:set_destination viewport w h)
+                                        (:commit surface))
+                     [:close] (set running false))))
 
-(:attach surface buffer 0 0)
-(:commit surface)
+  (:commit surface)
+  (:roundtrip display)
 
-(while running
-  (:dispatch display))
+  (:attach surface buffer 0 0)
+  (:commit surface)
 
-(:disconnect display)
+  (while running
+    (:dispatch display))
+
+  (:disconnect display))

@@ -648,7 +648,7 @@ JANET_FN(jwl_display_connect,
 
 JANET_MODULE_ENTRY(JanetTable *env) {
 	JanetRegExt cfuns[] = {
-		JANET_REG("display/connect-raw", jwl_display_connect),
+		JANET_REG("display/connect", jwl_display_connect),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);

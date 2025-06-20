@@ -1,7 +1,4 @@
-(import ./wayland-native :prefix "" :export true)
 (import lemongrass)
-
-(def- interfaces @{})
 
 (defn- scan-get-signature [[_ attrs & _]]
   (string/join
@@ -62,28 +59,31 @@
 (defn- scan-interface [[_ attrs & interface]]
   (def requests (filter |(= (first $) :request) interface))
   (def events (filter |(= (first $) :event) interface))
-  # Wrap put in a function that captures our private interfaces table
-  ((fn [k v] (put interfaces k v))
-    (keyword (attrs :name))
-    ~{:version ,(assert (scan-number (attrs :version)))
-      :requests ,(tuple/brackets ;(map scan-message requests))
-      :events ,(tuple/brackets ;(map scan-message events))
-      :send ,(eval ~(fn [request]
-                      (case request
-                        ,;(mapcat scan-send-case requests (range (length requests)))
-                        (errorf "unknown request %v" request))))}))
+  {(keyword (attrs :name))
+   {:version (assert (scan-number (attrs :version)))
+    :requests (tuple/brackets ;(map scan-message requests))
+    :events (tuple/brackets ;(map scan-message events))
+    :send (eval ~(fn [request]
+                   (case request
+                     ,;(mapcat scan-send-case requests (range (length requests)))
+                     (errorf "unknown request %v" request))))}})
 
 (defn- scan-protocol [[_ attrs & protocol]]
   (->> protocol
        (filter |(= (first $) :interface))
        (map scan-interface)))
 
-(defmacro scan [path]
-  ~(upscope
-     ,;(->> (lemongrass/markup->janet (slurp path))
-            (filter |(= (first $) :protocol))
-            (mapcat scan-protocol))))
+(defn- scan-path [path]
+  (->> (slurp path)
+       (lemongrass/markup->janet)
+       (filter |(= (first $) :protocol))
+       (mapcat scan-protocol)
+       (reduce merge @{})))
 
-(defn display/connect
-  [&opt name]
-  (display/connect-raw interfaces name))
+# Returns the interfaces table for wl/display/connect
+(defn scan [& paths]
+  (->> paths
+       (map scan-path)
+       (reduce merge @{})))
+
+(import ./wayland-native :prefix "" :export true)
