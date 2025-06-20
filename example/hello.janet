@@ -1,10 +1,9 @@
 (import ../src/wayland :as wl)
 
 (def interfaces
-  (wl/scan "/usr/share/wayland/wayland.xml"
-           "/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml"
-           "/usr/share/wayland-protocols/stable/viewporter/viewporter.xml"
-           "/usr/share/wayland-protocols/staging/single-pixel-buffer/single-pixel-buffer-v1.xml"))
+  (wl/scan :system-protocols ["stable/xdg-shell/xdg-shell.xml"
+                              "stable/viewporter/viewporter.xml"
+                              "staging/single-pixel-buffer/single-pixel-buffer-v1.xml"]))
 
 
 (defn main [&]

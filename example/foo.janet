@@ -1,6 +1,6 @@
 (import ../src/wayland :as wl)
 
-(def interfaces (wl/scan "/usr/share/wayland/wayland.xml"))
+(def interfaces (wl/scan))
 
 (defn main [&]
   (def display (wl/display/connect interfaces))

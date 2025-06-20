@@ -1,4 +1,5 @@
 (import lemongrass)
+(import spork/sh)
 
 (defn- scan-get-signature [[_ attrs & _]]
   (string/join
@@ -81,8 +82,19 @@
        (reduce merge @{})))
 
 # Returns the interfaces table for wl/display/connect
-(defn scan [& paths]
-  (->> paths
+(defn scan [&keys {:wayland-xml wayland-xml
+                   :system-protocols system-protocols
+                   :system-protocols-dir system-protocols-dir
+                   :custom-protocols custom-protocols}]
+  (default wayland-xml
+    (string (sh/exec-slurp "pkg-config" "--variable=pkgdatadir" "wayland-scanner") "/wayland.xml"))
+  (default system-protocols-dir
+    (sh/exec-slurp "pkg-config" "--variable=pkgdatadir" "wayland-protocols"))
+  (default system-protocols [])
+  (default custom-protocols [])
+  (->> (array/concat @[wayland-xml]
+                     (map |(string system-protocols-dir "/" $) system-protocols)
+                     custom-protocols)
        (map scan-path)
        (reduce merge @{})))
 
