@@ -1,4 +1,4 @@
-(import ../src/wayland :as wl)
+(import wayland :as wl)
 
 (def interfaces (wl/scan))
 

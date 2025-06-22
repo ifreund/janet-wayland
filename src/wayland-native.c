@@ -1,9 +1,12 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <janet.h>
-#include <stdint.h>
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 #include <wayland-util.h>

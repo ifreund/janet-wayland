@@ -1,0 +1,6 @@
+@{:author "Isaac Freund"
+  :dependencies @["Lemongrass" "spork"]
+  :description "Wayland scanner and libwayland bindings for janet"
+  :jpm-dependencies @[{:url "https://github.com/janet-lang/spork"} {:url "https://github.com/ifreund/lemongrass"}]
+  :name "wayland"
+  :version "0.0.0"}
