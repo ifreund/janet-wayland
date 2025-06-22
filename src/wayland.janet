@@ -44,8 +44,7 @@
                                         (not (attrs :interface)))) args))
   (def constructor (find (fn [[_ attrs & _]]
                            (= (attrs :type) "new_id")) args))
-  # TODO use kebab-case
-  [(keyword (attrs :name))
+  [(keyword (string/replace-all "_" "-" (attrs :name)))
    ~(fn [object ,;(filter truthy? (mapcat scan-send-args args))]
       (:send-raw object
                  ,opcode

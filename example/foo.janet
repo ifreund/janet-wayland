@@ -4,11 +4,11 @@
 
 (defn main [&]
   (def display (wl/display/connect interfaces))
-  (def registry (:get_registry display))
+  (def registry (:get-registry display))
   (:set-listener registry
                  (fn [event]
                    (match event
                      [:global name interface version] (pp event)
-                     [:global_remove name] (pp event))))
+                     [:global-remove name] (pp event))))
   (:roundtrip display)
   (:disconnect display))

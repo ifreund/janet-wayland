@@ -463,6 +463,18 @@ JANET_FN(jwl_proxy_send_raw,
 	}
 }
 
+static Janet snake_to_kebab_keywordv(const char *snake) {
+	char *kebab = strdup(snake);
+	for (char *i = kebab; *i; i++) {
+		if (*i == '_') {
+			*i = '-';
+		}
+	}
+	Janet ret = janet_ckeywordv(kebab);
+	free(kebab);
+	return ret;
+}
+
 static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t opcode,
 	const struct wl_message *msg, union wl_argument *wl_args) {
 	struct wl_proxy *wl = target;
@@ -470,8 +482,8 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	assert(j->wl == wl);
 
 	Janet eventvs[WL_CLOSURE_MAX_ARGS + 1];
-	// TODO use kebab-case
-	eventvs[0] = janet_ckeywordv(msg->name);
+
+	eventvs[0] = snake_to_kebab_keywordv(msg->name);
 
 	int32_t i = 0;
 	const char *signature = msg->signature;

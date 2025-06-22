@@ -14,7 +14,7 @@
   (var wm-base nil)
   (var single-pixel-buffer-man nil)
 
-  (def registry (:get_registry display))
+  (def registry (:get-registry display))
   (:set-listener registry
                  (fn [event]
                    (match event
@@ -22,7 +22,7 @@
                      (case interface
                        "wl_compositor" (set compositor (:bind registry name interface 1))
                        "wp_viewporter" (set viewporter (:bind registry name interface 1))
-                       "xdg_wm_base" (set wm-base (:bind registry name interface 1))
+                       "xdg_wm_base" (set wm-base (:bind registry name interface 5))
                        "wp_single_pixel_buffer_manager_v1" (set single-pixel-buffer-man (:bind registry name interface 1))))))
 
   (:roundtrip display)
@@ -32,17 +32,17 @@
   (assert wm-base)
   (assert single-pixel-buffer-man)
 
-  (def buffer (:create_u32_rgba_buffer single-pixel-buffer-man 0 (- (math/pow 2 32) 1) 0 (- (math/pow 2 32) 1)))
-  (def surface (:create_surface compositor))
-  (def viewport (:get_viewport viewporter surface))
-  (def xdg-surface (:get_xdg_surface wm-base surface))
-  (def xdg-toplevel (:get_toplevel xdg-surface))
+  (def buffer (:create-u32-rgba-buffer single-pixel-buffer-man 0 (- (math/pow 2 32) 1) 0 (- (math/pow 2 32) 1)))
+  (def surface (:create-surface compositor))
+  (def viewport (:get-viewport viewporter surface))
+  (def xdg-surface (:get-xdg-surface wm-base surface))
+  (def xdg-toplevel (:get-toplevel xdg-surface))
 
   (:set-listener xdg-surface
                  (fn [event]
                    (match event
                      [:configure serial] (do
-                                           (:ack_configure xdg-surface serial)
+                                           (:ack-configure xdg-surface serial)
                                            (:commit surface)))))
 
   (var running true)
@@ -51,8 +51,9 @@
                    (match event
                      [:configure w h] (let [w (if (= w 0) 42 w)
                                             h (if (= h 0) 42 h)]
-                                        (:set_destination viewport w h)
+                                        (:set-destination viewport w h)
                                         (:commit surface))
+                     [:wm-capabilities caps] (do (pp (type caps)) (pp (string/bytes caps)))
                      [:close] (set running false))))
 
   (:commit surface)
