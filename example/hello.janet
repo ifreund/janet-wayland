@@ -53,7 +53,6 @@
                                             h (if (= h 0) 42 h)]
                                         (:set-destination viewport w h)
                                         (:commit surface))
-                     [:wm-capabilities caps] (do (pp (type caps)) (pp (string/bytes caps)))
                      [:close] (set running false))))
 
   (:commit surface)
