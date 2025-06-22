@@ -522,14 +522,14 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 			}
 			break;
 		case 'n': {
-		    // libwayland-client creates wl_proxy objects for new_id arguments
-		    // when events are queued before calling our dispatcher.
-		    struct wl_proxy *new_wl = (struct wl_proxy *)wl_args[i].o;
-		    eventvs[i + 1] = jwl_proxy_create(new_wl, janet_ckeyword(msg->types[i]->name));
+			// libwayland-client creates wl_proxy objects for new_id arguments
+			// when events are queued before calling our dispatcher.
+			struct wl_proxy *new_wl = (struct wl_proxy *)wl_args[i].o;
+			eventvs[i + 1] = jwl_proxy_create(new_wl, janet_ckeyword(msg->types[i]->name));
 			break;
 		}
 		case 'a': {
-		    eventvs[i + 1] = janet_stringv(wl_args[i].a->data, wl_args[i].a->size);
+			eventvs[i + 1] = janet_stringv(wl_args[i].a->data, wl_args[i].a->size);
 			break;
 		}
 		case 'h':
@@ -541,60 +541,63 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		i++;
 	}
 
-    JanetTuple event = janet_tuple_n(eventvs, i + 1);
+	JanetTuple event = janet_tuple_n(eventvs, i + 1);
 
-    Janet args[1] = {janet_wrap_tuple(event)};
-    janet_call(j->listener, 1, args);
+	if (janet_checktype(j->user_data, JANET_NIL)) {
+		Janet args[2] = {
+			janet_wrap_abstract(j),
+			janet_wrap_tuple(event),
+		};
+		janet_call(j->listener, 2, args);
+	} else {
+		Janet args[3] = {
+			janet_wrap_abstract(j),
+			janet_wrap_tuple(event),
+			j->user_data,
+		};
+		janet_call(j->listener, 3, args);
+	}
 
 	return 0;
 }
 
 JANET_FN(jwl_proxy_set_listener,
-		"(wl/proxy/set-listener proxy listener)",
+		"(wl/proxy/set-listener proxy listener &opt user-data)",
 		"wl_proxy_add_dispatcher") {
-	janet_fixarity(argc, 2);
+	janet_arity(argc, 2, 3);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
 		janet_panic("proxy invalid");
 	}
-	JanetFunction *listener = janet_getfunction(argv, 1);
 
+	JanetFunction *listener = janet_getfunction(argv, 1);
 	if (j->listener != NULL) {
-	    janet_panic("proxy already has a listener");
+		janet_panic("proxy already has a listener");
 	}
 	j->listener = listener;
+
+	if (argc == 3) {
+		j->user_data = argv[2];
+	}
+
 	wl_proxy_add_dispatcher(j->wl, jwl_proxy_dispatcher, NULL, j);
 
-    return janet_wrap_nil();
-}
-
-JANET_FN(jwl_proxy_set_user_data,
-		"(wl/proxy/set-user-data proxy data)",
-		"Set an arbitrary value that may later be retrieved with wl/proxy/get-user-data") {
-	janet_fixarity(argc, 2);
-	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
-	if (j->wl == NULL) {
-		janet_panic("proxy invalid");
-	}
-	j->user_data = argv[1];
-    return janet_wrap_nil();
+	return janet_wrap_nil();
 }
 
 JANET_FN(jwl_proxy_get_user_data,
-		"(wl/proxy/get-user-data proxy data)",
-		"Retrieve the most recent value set with wl/proxy/set-user-data") {
+		"(wl/proxy/get-user-data proxy)", "") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
 		janet_panic("proxy invalid");
 	}
-    return j->user_data;
+	return j->user_data;
 }
 
 JanetMethod jwl_proxy_methods[] = {
 	{"send-raw", jwl_proxy_send_raw},
 	{"set-listener", jwl_proxy_set_listener},
-	{"set-user-data", jwl_proxy_set_user_data},
 	{"get-user-data", jwl_proxy_get_user_data},
 	{NULL, NULL},
 };

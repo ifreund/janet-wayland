@@ -16,7 +16,7 @@
 
   (def registry (:get-registry display))
   (:set-listener registry
-                 (fn [event]
+                 (fn [registry event]
                    (match event
                      [:global name interface version]
                      (case interface
@@ -39,7 +39,7 @@
   (def xdg-toplevel (:get-toplevel xdg-surface))
 
   (:set-listener xdg-surface
-                 (fn [event]
+                 (fn [xdg-surface event]
                    (match event
                      [:configure serial] (do
                                            (:ack-configure xdg-surface serial)
@@ -47,7 +47,7 @@
 
   (var running true)
   (:set-listener xdg-toplevel
-                 (fn [event]
+                 (fn [xdg-toplevel event]
                    (match event
                      [:configure w h] (let [w (if (= w 0) 42 w)
                                             h (if (= h 0) 42 h)]
