@@ -21,6 +21,7 @@ struct jwl_proxy {
 	JanetFunction *send;
 	// May be NULL if jwl_proxy_set_listener() is never called.
 	JanetFunction *listener;
+	Janet user_data;
 	// Maps interface name (keyword) to janet interface (struct)
 	// Populated by jwl_display_connect()
 	// NULL if not a wl_display
@@ -45,6 +46,7 @@ static Janet jwl_proxy_create(struct wl_proxy *wl, JanetKeyword interface_name) 
 	j->wl = wl;
 	j->send = send;
 	j->listener = NULL;
+	j->user_data = janet_wrap_nil();
 	j->interfaces = NULL;
 	j->wl_interfaces = NULL;
 
@@ -69,6 +71,7 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 	(void)len;
 	struct jwl_proxy *j = p;
 	janet_mark(janet_wrap_function(j->send));
+	janet_mark(j->user_data);
 	if (j->listener != NULL) {
 		janet_mark(janet_wrap_function(j->listener));
 	}
@@ -565,10 +568,34 @@ JANET_FN(jwl_proxy_set_listener,
     return janet_wrap_nil();
 }
 
+JANET_FN(jwl_proxy_set_user_data,
+		"(wl/proxy/set-user-data proxy data)",
+		"Set an arbitrary value that may later be retrieved with wl/proxy/get-user-data") {
+	janet_fixarity(argc, 2);
+	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
+	if (j->wl == NULL) {
+		janet_panic("proxy invalid");
+	}
+	j->user_data = argv[1];
+    return janet_wrap_nil();
+}
+
+JANET_FN(jwl_proxy_get_user_data,
+		"(wl/proxy/get-user-data proxy data)",
+		"Retrieve the most recent value set with wl/proxy/set-user-data") {
+	janet_fixarity(argc, 1);
+	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
+	if (j->wl == NULL) {
+		janet_panic("proxy invalid");
+	}
+    return j->user_data;
+}
 
 JanetMethod jwl_proxy_methods[] = {
 	{"send-raw", jwl_proxy_send_raw},
 	{"set-listener", jwl_proxy_set_listener},
+	{"set-user-data", jwl_proxy_set_user_data},
+	{"get-user-data", jwl_proxy_get_user_data},
 	{NULL, NULL},
 };
 
