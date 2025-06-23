@@ -3,7 +3,7 @@
 (def interfaces (wl/scan))
 
 (defn main [&]
-  (def display (wl/display/connect interfaces))
+  (def display (wl/display-connect interfaces))
   (def registry (:get-registry display))
   (:set-listener registry
                  (fn [registry event]

@@ -85,8 +85,8 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 }
 
 JANET_FN(jwl_display_disconnect,
-		"(wl/display/disconnect display)",
-		"wl_display_disconnect") {
+		"(wl/display-disconnect display)",
+		"See libwayland's wl_display_disconnect") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -98,8 +98,8 @@ JANET_FN(jwl_display_disconnect,
 }
 
 JANET_FN(jwl_display_roundtrip,
-		"(wl/display/roundtrip display)",
-		"wl_display_roundtrip") {
+		"(wl/display-roundtrip display)",
+		"See libwayland's wl_display_roundtrip") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -110,8 +110,8 @@ JANET_FN(jwl_display_roundtrip,
 }
 
 JANET_FN(jwl_display_dispatch,
-		"(wl/display/dispatch display)",
-		"wl_display_dispatch") {
+		"(wl/display-dispatch display)",
+		"See libwayland's wl_display_dispatch") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -237,7 +237,7 @@ static const char *jwl_signature_iter(const char *s, char *type, bool *allow_nul
 }
 
 JANET_FN(jwl_proxy_send_raw,
-		"(wl/proxy/send-raw proxy opcode interface version flags args)",
+		"(wl/proxy-send-raw proxy opcode interface version flags args)",
 		"Calls wl_proxy_marshal_array_flags() internally") {
 	janet_fixarity(argc, 6);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
@@ -470,8 +470,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 }
 
 JANET_FN(jwl_proxy_set_listener,
-		"(wl/proxy/set-listener proxy listener &opt user-data)",
-		"wl_proxy_add_dispatcher") {
+		"(wl/proxy-set-listener proxy listener &opt user-data)", "") {
 	janet_arity(argc, 2, 3);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -494,7 +493,7 @@ JANET_FN(jwl_proxy_set_listener,
 }
 
 JANET_FN(jwl_proxy_get_user_data,
-		"(wl/proxy/get-user-data proxy)", "") {
+		"(wl/proxy-get-user-data proxy)", "") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -668,8 +667,11 @@ static void jwl_check_interface(Janet interfacev, JanetStruct interfaces) {
 }
 
 JANET_FN(jwl_display_connect,
-		"(wl/display/connect-raw interfaces &opt name)",
-		"wl_display_connect") {
+		"(wl/display-connect interfaces &opt name)",
+		"Connect to a Wayland server."
+		"The interfaces argument should be the struct returned by (wl/scan)."
+		"The optional name argument is passed on to libwayland."
+		"See docs for libwayland's wl_display_connect() for details.") {
 	janet_arity(argc, 1, 2);
 	JanetStruct interfaces = janet_getstruct(argv, 0);
 	const char *name = janet_optcstring(argv, argc, 1, NULL);
@@ -705,7 +707,7 @@ JANET_FN(jwl_display_connect,
 
 JANET_MODULE_ENTRY(JanetTable *env) {
 	JanetRegExt cfuns[] = {
-		JANET_REG("display/connect", jwl_display_connect),
+		JANET_REG("display-connect", jwl_display_connect),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);

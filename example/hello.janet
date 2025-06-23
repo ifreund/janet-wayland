@@ -7,7 +7,7 @@
 
 
 (defn main [&]
-  (def display (wl/display/connect interfaces))
+  (def display (wl/display-connect interfaces))
 
   (var compositor nil)
   (var viewporter nil)
