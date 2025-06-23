@@ -1,9 +1,9 @@
-(import wayland :as wl)
+(import wayland)
 
-(def interfaces (wl/scan))
+(def interfaces (wayland/scan))
 
 (defn main [&]
-  (def display (wl/display-connect interfaces))
+  (def display (wayland/connect interfaces))
   (def registry (:get-registry display))
   (:set-listener registry
                  (fn [registry event]

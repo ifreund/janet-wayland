@@ -143,8 +143,9 @@
 
   (struct ;(mapcat scan-interface interfaces)))
 
-# Returns the interfaces table for wl/display-connect
-(defn scan [&named wayland-xml system-protocols system-protocols-dir custom-protocols]
+(defn scan
+  "Reads Wayland protocol XML files to generate the interfaces table for (wayland/connect)"
+  [&named wayland-xml system-protocols system-protocols-dir custom-protocols]
   (default wayland-xml
     (string (sh/exec-slurp "pkg-config" "--variable=pkgdatadir" "wayland-scanner") "/wayland.xml"))
   (default system-protocols-dir

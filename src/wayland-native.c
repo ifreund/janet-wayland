@@ -84,9 +84,7 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 	return 0;
 }
 
-JANET_FN(jwl_display_disconnect,
-		"(wl/display-disconnect display)",
-		"See libwayland's wl_display_disconnect") {
+Janet jwl_display_disconnect(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -97,9 +95,7 @@ JANET_FN(jwl_display_disconnect,
 	return janet_wrap_nil();
 }
 
-JANET_FN(jwl_display_roundtrip,
-		"(wl/display-roundtrip display)",
-		"See libwayland's wl_display_roundtrip") {
+Janet jwl_display_roundtrip(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -109,9 +105,7 @@ JANET_FN(jwl_display_roundtrip,
 	return janet_wrap_nil();
 }
 
-JANET_FN(jwl_display_dispatch,
-		"(wl/display-dispatch display)",
-		"See libwayland's wl_display_dispatch") {
+Janet jwl_display_dispatch(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -236,9 +230,7 @@ static const char *jwl_signature_iter(const char *s, char *type, bool *allow_nul
 	return s;
 }
 
-JANET_FN(jwl_proxy_send_raw,
-		"(wl/proxy-send-raw proxy opcode interface version flags args)",
-		"Calls wl_proxy_marshal_array_flags() internally") {
+Janet jwl_proxy_send_raw(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 6);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -307,10 +299,10 @@ JANET_FN(jwl_proxy_send_raw,
 			struct jwl_proxy *o = janet_getabstract(args, i, &jwl_proxy_type);
 			const struct wl_interface *expected = message->types[i];
 			if (o->wl == NULL) {
-				janet_panicf("expected <wl/proxy (%s)>, got %v", expected->name, args[i]);
+				janet_panicf("expected <wayland/proxy (%s)>, got %v", expected->name, args[i]);
 			}
 			if (expected != NULL && wl_proxy_get_interface(o->wl) != expected) {
-				janet_panicf("expected <wl/proxy (%s)>, got %v", expected->name, args[i]);
+				janet_panicf("expected <wayland/proxy (%s)>, got %v", expected->name, args[i]);
 			}
 			wl_args[i] = (union wl_argument){ .o = (struct wl_object *)o->wl };
 			break;
@@ -469,8 +461,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	return 0;
 }
 
-JANET_FN(jwl_proxy_set_listener,
-		"(wl/proxy-set-listener proxy listener &opt user-data)", "") {
+Janet jwl_proxy_set_listener(int32_t argc, Janet *argv) {
 	janet_arity(argc, 2, 3);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -492,8 +483,7 @@ JANET_FN(jwl_proxy_set_listener,
 	return janet_wrap_nil();
 }
 
-JANET_FN(jwl_proxy_get_user_data,
-		"(wl/proxy-get-user-data proxy)", "") {
+Janet jwl_proxy_get_user_data(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	if (j->wl == NULL) {
@@ -551,7 +541,7 @@ static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {
 }
 
 const JanetAbstractType jwl_proxy_type = {
-	"wl/proxy",
+	"wayland/proxy",
 	jwl_proxy_gc,
 	jwl_proxy_gcmark,
 	jwl_proxy_get,
@@ -666,10 +656,10 @@ static void jwl_check_interface(Janet interfacev, JanetStruct interfaces) {
 	}
 }
 
-JANET_FN(jwl_display_connect,
-		"(wl/display-connect interfaces &opt name)",
+JANET_FN(jwl_connect,
+		"(wayland/connect interfaces &opt name)",
 		"Connect to a Wayland server."
-		"The interfaces argument should be the struct returned by (wl/scan)."
+		"The interfaces argument should be the struct returned by (wayland/scan)."
 		"The optional name argument is passed on to libwayland."
 		"See docs for libwayland's wl_display_connect() for details.") {
 	janet_arity(argc, 1, 2);
@@ -707,7 +697,7 @@ JANET_FN(jwl_display_connect,
 
 JANET_MODULE_ENTRY(JanetTable *env) {
 	JanetRegExt cfuns[] = {
-		JANET_REG("display-connect", jwl_display_connect),
+		JANET_REG("connect", jwl_connect),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);

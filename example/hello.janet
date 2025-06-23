@@ -1,13 +1,14 @@
-(import wayland :as wl)
+(import wayland)
 
 (def interfaces
-  (wl/scan :system-protocols ["stable/xdg-shell/xdg-shell.xml"
-                              "stable/viewporter/viewporter.xml"
-                              "staging/single-pixel-buffer/single-pixel-buffer-v1.xml"]))
+  (wayland/scan
+    :system-protocols ["stable/xdg-shell/xdg-shell.xml"
+                       "stable/viewporter/viewporter.xml"
+                       "staging/single-pixel-buffer/single-pixel-buffer-v1.xml"]))
 
 
 (defn main [&]
-  (def display (wl/display-connect interfaces))
+  (def display (wayland/connect interfaces))
 
   (var compositor nil)
   (var viewporter nil)
