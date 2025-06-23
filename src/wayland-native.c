@@ -26,7 +26,7 @@ struct jwl_proxy {
 	// Populated by jwl_display_connect()
 	// NULL if not a wl_display
 	// TODO don't waste memory by having this field present for every wl_proxy
-	JanetTable *interfaces;
+	JanetStruct interfaces;
 	// Maps interface name (keyword) to wl_interface (pointer)
 	// NULL if not a wl_display
 	// TODO don't waste memory by having this field present for every wl_proxy
@@ -39,7 +39,7 @@ static Janet jwl_proxy_create(struct wl_proxy *wl, JanetKeyword interface_name) 
 	assert(display->wl_interfaces != NULL);
 
 	Janet interface_namev = janet_wrap_keyword(interface_name);
-	JanetStruct interface = janet_unwrap_struct(janet_table_get(display->interfaces, interface_namev));
+	JanetStruct interface = janet_unwrap_struct(janet_struct_get(display->interfaces, interface_namev));
 	JanetFunction *send = janet_unwrap_function(janet_struct_get(interface, janet_ckeywordv("send")));
 
 	struct jwl_proxy *j = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
@@ -76,7 +76,7 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 		janet_mark(janet_wrap_function(j->listener));
 	}
 	if (j->interfaces != NULL) {
-		janet_mark(janet_wrap_table(j->interfaces));
+		janet_mark(janet_wrap_struct(j->interfaces));
 	}
 	if (j->wl_interfaces != NULL) {
 		janet_mark(janet_wrap_table(j->wl_interfaces));
@@ -128,9 +128,9 @@ JanetMethod jwl_display_methods[] = {
 	{NULL, NULL},
 };
 
-static void jwl_check_interface(JanetTable *interfaces, JanetTable *wl_interfaces, Janet namev);
+static void jwl_check_interface(JanetStruct interfaces, JanetTable *wl_interfaces, Janet namev);
 
-static void jwl_check_message(JanetTable *interfaces, JanetTable *wl_interfaces, Janet messagev) {
+static void jwl_check_message(JanetStruct interfaces, JanetTable *wl_interfaces, Janet messagev) {
 	if (!janet_checktype(messagev, JANET_STRUCT)) {
 		janet_panicf("expected message struct, got %v", messagev);
 	}
@@ -178,8 +178,8 @@ static void jwl_check_message(JanetTable *interfaces, JanetTable *wl_interfaces,
 	}
 }
 
-static void jwl_check_interface(JanetTable *interfaces, JanetTable *wl_interfaces, Janet namev) {
-	Janet interfacev = janet_table_get(interfaces, namev);
+static void jwl_check_interface(JanetStruct interfaces, JanetTable *wl_interfaces, Janet namev) {
+	Janet interfacev = janet_struct_get(interfaces, namev);
 	if (!janet_checktype(interfacev, JANET_STRUCT)) {
 		janet_panicf("expected interface struct, got %v", interfacev);
 	}
@@ -221,10 +221,10 @@ static void jwl_check_interface(JanetTable *interfaces, JanetTable *wl_interface
 	}
 }
 
-static struct wl_interface *jwl_get_wl_interface_unchecked(JanetTable *interfaces,
+static struct wl_interface *jwl_get_wl_interface_unchecked(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet namev);
 
-static struct wl_message jwl_get_wl_message_unchecked(JanetTable *interfaces,
+static struct wl_message jwl_get_wl_message_unchecked(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet messagev) {
 	JanetStruct message = janet_unwrap_struct(messagev);
 	struct wl_message wl;
@@ -259,9 +259,9 @@ static struct wl_message jwl_get_wl_message_unchecked(JanetTable *interfaces,
 	return wl;
 }
 
-static struct wl_interface *jwl_get_wl_interface_unchecked(JanetTable *interfaces,
+static struct wl_interface *jwl_get_wl_interface_unchecked(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet namev) {
-	JanetStruct interface = janet_unwrap_struct(janet_table_get(interfaces, namev));
+	JanetStruct interface = janet_unwrap_struct(janet_struct_get(interfaces, namev));
 
 	Janet existing = janet_table_get(wl_interfaces, namev);
 	if (janet_checktype(existing, JANET_POINTER)) {
@@ -313,7 +313,7 @@ static struct wl_interface *jwl_get_wl_interface_unchecked(JanetTable *interface
 //              :types [nil, interface]}]
 //  :events []
 //  :send (fn [request] ...)}
-static const struct wl_interface *jwl_get_wl_interface(JanetTable *interfaces,
+static const struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 		JanetTable *wl_interfaces, JanetKeyword name) {
 	Janet namev = janet_wrap_keyword(name);
 	Janet existing = janet_table_get(wl_interfaces, namev);
@@ -484,6 +484,17 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	struct jwl_proxy *j = wl_proxy_get_user_data(wl);
 	assert(j->wl == wl);
 
+	struct jwl_proxy *display = wl_proxy_get_user_data((struct wl_proxy *)wl_proxy_get_display(j->wl));
+	assert(display->interfaces != NULL);
+	assert(display->wl_interfaces != NULL);
+
+	JanetStruct interface = janet_unwrap_struct(janet_struct_get(display->interfaces,
+		janet_ckeywordv(wl_proxy_get_interface(wl)->name)));
+	JanetTuple events = janet_unwrap_tuple(janet_struct_get(interface, janet_ckeywordv("events")));
+	assert(opcode < janet_tuple_length(events));
+	JanetTuple enums = janet_unwrap_tuple(
+		janet_struct_get(janet_unwrap_struct(events[opcode]), janet_ckeywordv("enums")));
+
 	Janet eventvs[WL_CLOSURE_MAX_ARGS + 1];
 
 	eventvs[0] = snake_to_kebab_keywordv(msg->name);
@@ -495,12 +506,24 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		bool allow_null;
 		signature = jwl_signature_iter(signature, &type, &allow_null);
 		switch (type) {
-		case 'i':
-			eventvs[i + 1] = janet_wrap_number(wl_args[i].i);
+		case 'i': {
+			Janet v = janet_wrap_number(wl_args[i].i);
+			if (janet_checktype(enums[i], JANET_FUNCTION)) {
+				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, (const Janet []){v});
+			} else {
+				eventvs[i + 1] = v;
+			}
 			break;
-		case 'u':
-			eventvs[i + 1] = janet_wrap_number(wl_args[i].u);
+		}
+		case 'u': {
+			Janet v = janet_wrap_number(wl_args[i].u);
+			if (janet_checktype(enums[i], JANET_FUNCTION)) {
+				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, (const Janet []){v});
+			} else {
+				eventvs[i + 1] = v;
+			}
 			break;
+		}
 		case 'f':
 			eventvs[i + 1] = janet_wrap_number(wl_fixed_to_double(wl_args[i].f));
 			break;
@@ -544,18 +567,16 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	JanetTuple event = janet_tuple_n(eventvs, i + 1);
 
 	if (janet_checktype(j->user_data, JANET_NIL)) {
-		Janet args[2] = {
+		janet_call(j->listener, 2, (const Janet []){
 			janet_wrap_abstract(j),
 			janet_wrap_tuple(event),
-		};
-		janet_call(j->listener, 2, args);
+		});
 	} else {
-		Janet args[3] = {
+		janet_call(j->listener, 3, (const Janet[]){
 			janet_wrap_abstract(j),
 			janet_wrap_tuple(event),
 			j->user_data,
-		};
-		janet_call(j->listener, 3, args);
+		});
 	}
 
 	return 0;
@@ -664,7 +685,7 @@ JANET_FN(jwl_display_connect,
 		"(wl/display/connect-raw interfaces &opt name)",
 		"wl_display_connect") {
 	janet_arity(argc, 1, 2);
-	JanetTable *interfaces = janet_gettable(argv, 0);
+	JanetStruct interfaces = janet_getstruct(argv, 0);
 	const char *name = janet_optcstring(argv, argc, 1, NULL);
 
 	JanetTable *wl_interfaces = janet_table(0);
@@ -672,7 +693,7 @@ JANET_FN(jwl_display_connect,
 	(void)jwl_get_wl_interface(interfaces, wl_interfaces, janet_ckeyword("wl_display"));
 
 	JanetStruct interface = janet_unwrap_struct(
-		janet_table_get(interfaces, janet_ckeywordv("wl_display")));
+		janet_struct_get(interfaces, janet_ckeywordv("wl_display")));
 	JanetFunction *send = janet_unwrap_function(
 		janet_struct_get(interface, janet_ckeywordv("send")));
 
