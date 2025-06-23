@@ -6,7 +6,6 @@
                        "stable/viewporter/viewporter.xml"
                        "staging/single-pixel-buffer/single-pixel-buffer-v1.xml"]))
 
-
 (defn main [&]
   (def display (wayland/connect interfaces))
 
