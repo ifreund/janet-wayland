@@ -1,6 +1,16 @@
 (import lemongrass)
 (import spork/sh)
 
+(def- display-methods
+  {:roundtrip (fn roundtrip [display]
+                # TODO destroy callback
+                (def callback (:sync display))
+                (var done false)
+                (:set-listener callback (fn [cb ev] (set done true)))
+                (while (not done)
+                  (:dispatch display)))})
+
+
 (defn- scan-args-signature [[_ attrs & _]]
   (string/join
     [(case (attrs :allow-null)
@@ -139,7 +149,9 @@
       :send (eval ~(fn [request]
                      (case request
                        ,;(mapcat send-case requests (range (length requests)))
-                       (errorf "unknown request %v" request))))}])
+                       (errorf "unknown request %v" request))))
+      :methods (if (= current-interface :wl_display)
+                 display-methods)}])
 
   (struct ;(mapcat scan-interface interfaces)))
 
