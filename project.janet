@@ -3,7 +3,7 @@
   :description "Wayland scanner and libwayland bindings for janet"
   :author "Isaac Freund"
   :dependencies [{:url "https://github.com/janet-lang/spork"}
-                 {:url "https://github.com/ifreund/lemongrass"}]
+                 {:url "https://github.com/pyrmont/lemongrass"}]
   :version "0.0.0")
 
 (declare-source
