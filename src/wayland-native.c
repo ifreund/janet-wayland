@@ -544,7 +544,15 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		case 'i': {
 			Janet v = janet_wrap_number(wl_args[i].i);
 			if (janet_checktype(enums[i], JANET_FUNCTION)) {
-				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, (const Janet []){v});
+				Janet out;
+				JanetSignal sig = janet_pcall(janet_unwrap_function(enums[i]),
+					1, (const Janet []){v}, &out, NULL);
+				if (sig != JANET_SIGNAL_OK) {
+					display->sig = sig;
+					display->ret = out;
+					return 0;
+				}
+				eventvs[i + 1] = out;
 			} else {
 				eventvs[i + 1] = v;
 			}
@@ -553,7 +561,15 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		case 'u': {
 			Janet v = janet_wrap_number(wl_args[i].u);
 			if (janet_checktype(enums[i], JANET_FUNCTION)) {
-				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, (const Janet []){v});
+				Janet out;
+				JanetSignal sig = janet_pcall(janet_unwrap_function(enums[i]),
+					1, (const Janet []){v}, &out, NULL);
+				if (sig != JANET_SIGNAL_OK) {
+					display->sig = sig;
+					display->ret = out;
+					return 0;
+				}
+				eventvs[i + 1] = out;
 			} else {
 				eventvs[i + 1] = v;
 			}
