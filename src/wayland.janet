@@ -5,11 +5,10 @@
 
 (defn display/roundtrip [display]
   (def callback (:sync display))
-  (defer (:destroy callback)
-    (var done false)
-    (:set-listener callback (fn [_ _] (set done true)))
-    (while (not done)
-      (:dispatch display))))
+  (var done false)
+  (:set-listener callback (fn [_ _] (set done true)))
+  (while (not done)
+    (:dispatch display)))
 
 (defn- scan-args-signature [[_ attrs & _]]
   (string/join
@@ -107,7 +106,8 @@
        :signature (string (or (attrs :since) "")
                           (string/join (map scan-args-signature args)))
        :types (tuple/brackets ;(mapcat scan-args-types args))
-       :enums (tuple/brackets ;(mapcat scan-args-enums args))})
+       :enums (tuple/brackets ;(mapcat scan-args-enums args))
+       :destructor (if (= "destructor" (attrs :type)) true)})
 
     (defn request-params [[_ attrs & _]]
       (case (attrs :type)

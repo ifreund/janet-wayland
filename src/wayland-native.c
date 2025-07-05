@@ -546,8 +546,9 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		janet_ckeywordv(wl_proxy_get_interface(wl)->name)));
 	JanetTuple events = janet_unwrap_tuple(janet_struct_get(interface, janet_ckeywordv("events")));
 	assert(opcode < janet_tuple_length(events));
-	JanetTuple enums = janet_unwrap_tuple(
-		janet_struct_get(janet_unwrap_struct(events[opcode]), janet_ckeywordv("enums")));
+	JanetStruct event_info = janet_unwrap_struct(events[opcode]);
+	JanetTuple enums = janet_unwrap_tuple(janet_struct_get(event_info, janet_ckeywordv("enums")));
+	bool destructor = janet_truthy(janet_struct_get(event_info, janet_ckeywordv("destructor")));
 
 	Janet eventvs[WL_CLOSURE_MAX_ARGS + 1];
 
@@ -643,6 +644,14 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		j->display->sig = janet_pcall(j->listener,
 			3, (const Janet []){janet_wrap_abstract(j), event, j->user_data},
 			&j->display->ret, NULL);
+	}
+
+	// I think it's nicest to not crash if the user destroys the proxy in their
+	// listener. Also, we can't panic here anyways since this function is
+	// invoked by libwayland.
+	if (destructor && j->wl != NULL) {
+		wl_proxy_destroy(j->wl);
+		j->wl = NULL;
 	}
 
 	return 0;
