@@ -117,7 +117,7 @@ JanetSignal jwl_dispatch_pending(struct jwl_proxy *display, Janet *out) {
 
 	while (display->sig == JANET_SIGNAL_OK) {
 		int dispatched =
-			wl_display_dispatch_pending_one((struct wl_display *)display->wl);
+			wl_display_dispatch_pending_single((struct wl_display *)display->wl);
 		if (dispatched < 0) {
 			*out = janet_cstringv("failed to dispatch pending events");
 			return JANET_SIGNAL_ERROR;
