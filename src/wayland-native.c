@@ -374,7 +374,9 @@ static const char *jwl_signature_iter(const char *s, char *type, bool *allow_nul
 	return s;
 }
 
-Janet jwl_proxy_send_raw(int32_t argc, Janet *argv) {
+JANET_FN(jwl_proxy_request_raw,
+        "(proxy/request-raw proxy opcode interface version flags args",
+        "") {
 	janet_fixarity(argc, 6);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -616,7 +618,9 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	return 0;
 }
 
-Janet jwl_proxy_set_listener(int32_t argc, Janet *argv) {
+JANET_FN(jwl_proxy_set_listener,
+		"(proxy/set-listener proxy listener &opt user-data)",
+		"") {
 	janet_arity(argc, 2, 3);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -632,46 +636,32 @@ Janet jwl_proxy_set_listener(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
-Janet jwl_proxy_get_user_data(int32_t argc, Janet *argv) {
+JANET_FN(jwl_proxy_get_user_data,
+		"(proxy/get-user-data proxy)",
+		"") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
 	return j->user_data;
 }
 
-Janet jwl_proxy_destroy(int32_t argc, Janet *argv) {
+JANET_FN(jwl_proxy_destroy,
+		"(proxy/destroy proxy)",
+		"") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
+	if (j->wl == (struct wl_proxy *)j->display->wl) {
+	    janet_panic("display may only be destroyed with display/disconnect");
+	}
 	wl_proxy_destroy(j->wl);
 	return janet_wrap_nil();
 }
 
-JanetMethod jwl_proxy_methods[] = {
-	{"send-raw", jwl_proxy_send_raw},
-	{"set-listener", jwl_proxy_set_listener},
-	{"get-user-data", jwl_proxy_get_user_data},
-	// XXX don't allow :destroy on display
-	{"destroy", jwl_proxy_destroy},
-	{NULL, NULL},
-};
-
-static int jwl_proxy_get(void *p, Janet keyv, Janet *out) {
+static int jwl_proxy_get(void *p, Janet key, Janet *out) {
 	struct jwl_proxy *j = p;
-	jwl_proxy_validate(j);
-	if (!janet_checktype(keyv, JANET_KEYWORD)) {
-		return 0;
-	}
-	Janet methodv = janet_struct_get(j->methods, keyv);
-	if (!janet_checktype(methodv, JANET_NIL)) {
-		*out = methodv;
-		return 1;
-	}
-	JanetKeyword key = janet_unwrap_keyword(keyv);
-	if (janet_getmethod(key, jwl_proxy_methods, out)) {
-		return 1;
-	}
-	return 0;
+	*out = janet_struct_get(j->methods, key);
+	return 1;
 }
 
 static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {
@@ -861,6 +851,10 @@ JANET_MODULE_ENTRY(JanetTable *env) {
 		JANET_REG("connect", jwl_connect),
 		JANET_REG("display/disconnect", jwl_display_disconnect),
 		JANET_REG("display/dispatch", jwl_display_dispatch),
+		JANET_REG("proxy/set-listener", jwl_proxy_set_listener),
+		JANET_REG("proxy/get-user-data", jwl_proxy_get_user_data),
+		JANET_REG("proxy/request-raw", jwl_proxy_request_raw),
+		JANET_REG("proxy/destroy", jwl_proxy_destroy),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);

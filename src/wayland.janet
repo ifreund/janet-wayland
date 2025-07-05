@@ -3,16 +3,13 @@
 
 (import ./wayland-native :prefix "" :export true)
 
-(def- display-methods
-  [:dispatch display/dispatch
-   :disconnect display/disconnect
-   :roundtrip (fn roundtrip [display]
-                (def callback (:sync display))
-                (defer (:destroy callback)
-                  (var done false)
-                  (:set-listener callback (fn [_ _] (set done true)))
-                  (while (not done)
-                    (:dispatch display))))])
+(defn display/roundtrip [display]
+  (def callback (:sync display))
+  (defer (:destroy callback)
+    (var done false)
+    (:set-listener callback (fn [_ _] (set done true)))
+    (while (not done)
+      (:dispatch display))))
 
 (defn- scan-args-signature [[_ attrs & _]]
   (string/join
@@ -112,12 +109,12 @@
        :types (tuple/brackets ;(mapcat scan-args-types args))
        :enums (tuple/brackets ;(mapcat scan-args-enums args))})
 
-    (defn send-params [[_ attrs & _]]
+    (defn request-params [[_ attrs & _]]
       (case (attrs :type)
         "new_id" (if (attrs :interface) [] ['interface 'version])
         [(symbol (attrs :name))]))
 
-    (defn send-args [[_ attrs & _]]
+    (defn request-args [[_ attrs & _]]
       (match (attrs :type)
         (t (or (= t "int") (= t "uint")))
         (if-let [e (attrs :enum)]
@@ -126,7 +123,7 @@
         "new_id" (if (attrs :interface) [nil] ['interface 'version nil])
         [(symbol (attrs :name))]))
 
-    (defn send-case [[_ attrs & request] opcode]
+    (defn request-method [[_ attrs & request] opcode]
       (def args (filter |(= (first $) :arg) request))
       (def generic-constructor (find (fn [[_ attrs & _]]
                                        (and (= (attrs :type) "new_id")
@@ -134,24 +131,33 @@
       (def constructor (find (fn [[_ attrs & _]]
                                (= (attrs :type) "new_id")) args))
       [(keybab (attrs :name))
-       (eval ~(fn [object ,;(mapcat send-params args)]
-                (:send-raw object
-                           ,opcode
-                           ,(cond
-                              generic-constructor '(keyword interface)
-                              constructor ~(keyword ,((get constructor 1) :interface)))
-                           ,(if generic-constructor 'version 0)
-                           ,(if (= (attrs :type) "destructor") {:destroy true} {})
-                           ,(tuple/brackets
-                              ;(mapcat send-args args)))))])
+       (eval ~(fn [object ,;(mapcat request-params args)]
+                (,proxy/request-raw
+                  object
+                  ,opcode
+                  ,(cond
+                     generic-constructor '(keyword interface)
+                     constructor ~(keyword ,((get constructor 1) :interface)))
+                  ,(if generic-constructor 'version 0)
+                  ,(if (= (attrs :type) "destructor") {:destroy true} {})
+                  ,(tuple/brackets
+                     ;(mapcat request-args args)))))])
 
     [current-interface
      {:version (assert (scan-number (attrs :version)))
       :requests (tuple/brackets ;(map scan-message requests))
       :events (tuple/brackets ;(map scan-message events))
-      :methods (struct ;(mapcat send-case requests (range (length requests)))
-                       ;(if (= current-interface :wl_display)
-                          display-methods []))}])
+      :methods (struct
+                 :set-listener proxy/set-listener
+                 :get-user-data proxy/get-user-data
+                 ;(if (= current-interface :wl_display)
+                    [:dispatch display/dispatch
+                     :roundtrip display/roundtrip
+                     :disconnect display/disconnect]
+                    [:destroy proxy/destroy])
+                 # If there is a destroy request in the protocol it will
+                 # replace the proxy/destroy method.
+                 ;(mapcat request-method requests (range (length requests))))}])
 
   (struct ;(mapcat scan-interface interfaces)))
 
