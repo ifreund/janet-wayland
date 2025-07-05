@@ -510,6 +510,9 @@ JANET_FN(jwl_proxy_request_raw,
 
 	struct wl_proxy *new_wl = wl_proxy_marshal_array_flags(j->wl, opcode,
 		wl_interface, version, wl_flags, wl_args);
+	if ((wl_flags & WL_MARSHAL_FLAG_DESTROY) != 0) {
+		j->wl = NULL;
+	}
 	if (new_wl == NULL) {
 		if (wl_interface != NULL) {
 			JANET_OUT_OF_MEMORY;
