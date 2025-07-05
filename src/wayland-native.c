@@ -660,10 +660,21 @@ Janet jwl_proxy_get_user_data(int32_t argc, Janet *argv) {
 	return j->user_data;
 }
 
+Janet jwl_proxy_destroy(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
+	if (j->wl == NULL) {
+		janet_panic("proxy invalid");
+	}
+	wl_proxy_destroy(j->wl);
+	return janet_wrap_nil();
+}
+
 JanetMethod jwl_proxy_methods[] = {
 	{"send-raw", jwl_proxy_send_raw},
 	{"set-listener", jwl_proxy_set_listener},
 	{"get-user-data", jwl_proxy_get_user_data},
+	{"destroy", jwl_proxy_destroy},
 	{NULL, NULL},
 };
 
@@ -673,8 +684,13 @@ static int jwl_proxy_get(void *p, Janet keyv, Janet *out) {
 		return 0;
 	}
 
-	JanetKeyword key = janet_unwrap_keyword(keyv);
+	Janet methodv = janet_struct_get(j->methods, keyv);
+	if (!janet_checktype(methodv, JANET_NIL)) {
+		*out = methodv;
+		return 1;
+	}
 
+	JanetKeyword key = janet_unwrap_keyword(keyv);
 	if (janet_getmethod(key, jwl_proxy_methods, out)) {
 		return 1;
 	}
@@ -682,13 +698,6 @@ static int jwl_proxy_get(void *p, Janet keyv, Janet *out) {
 	if (j->wl == NULL) {
 		janet_panic("proxy invalid");
 	}
-
-	Janet methodv = janet_struct_get(j->methods, keyv);
-	if (!janet_checktype(methodv, JANET_NIL)) {
-		*out = methodv;
-		return 1;
-	}
-
 	if (wl_proxy_get_interface(j->wl) == &wl_display_interface) {
 		if (janet_getmethod(key, jwl_display_methods, out)) {
 			return 1;
@@ -848,7 +857,7 @@ JANET_FN(jwl_connect,
 
 	JanetStruct interface = janet_unwrap_struct(
 		janet_struct_get(interfaces, janet_ckeywordv("wl_display")));
-	JanetStruct methods = janet_unwrap_function(
+	JanetStruct methods = janet_unwrap_struct(
 		janet_struct_get(interface, janet_ckeywordv("methods")));
 
 	struct wl_display *wl = wl_display_connect(name);

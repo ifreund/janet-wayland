@@ -3,13 +3,12 @@
 
 (def- display-methods
   [:roundtrip (fn roundtrip [display]
-                # TODO destroy callback
                 (def callback (:sync display))
-                (var done false)
-                (:set-listener callback (fn [cb ev] (set done true)))
-                (while (not done)
-                  (:dispatch display)))])
-
+                (defer (:destroy callback)
+                  (var done false)
+                  (:set-listener callback (fn [_ _] (set done true)))
+                  (while (not done)
+                    (:dispatch display))))])
 
 (defn- scan-args-signature [[_ attrs & _]]
   (string/join
