@@ -106,7 +106,10 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 	return 0;
 }
 
-Janet jwl_display_disconnect(int32_t argc, Janet *argv) {
+JANET_FN(jwl_display_disconnect,
+		"(wayland/display/disconnect display)",
+		"Disconnect from the Wayland server and destroy the display."
+		"Invalidates all objects associated with the display.") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -245,7 +248,11 @@ void jwl_dispatch_write_callback(JanetFiber *fiber, JanetAsyncEvent event) {
 }
 
 // Implementation of wl_display_dispatch() that integrates with the janet event loop
-Janet jwl_display_dispatch(int32_t argc, Janet *argv) {
+JANET_FN(jwl_display_dispatch,
+		"(display/dispatch display)",
+		"Write requests to the Wayland connection, read events from the server, "
+		"and invoke event listeners. Uses non-blocking I/O integrated with "
+		"Janet's event loop.") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -258,12 +265,6 @@ Janet jwl_display_dispatch(int32_t argc, Janet *argv) {
 	*ev_state = j->display;
 	janet_async_start(j->display->stream, JANET_ASYNC_LISTEN_WRITE, jwl_dispatch_write_callback, ev_state);
 }
-
-JanetMethod jwl_display_methods[] = {
-	{"disconnect", jwl_display_disconnect },
-	{"dispatch", jwl_display_dispatch },
-	{NULL, NULL},
-};
 
 static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet namev);
@@ -670,11 +671,6 @@ static int jwl_proxy_get(void *p, Janet keyv, Janet *out) {
 	if (janet_getmethod(key, jwl_proxy_methods, out)) {
 		return 1;
 	}
-	if (wl_proxy_get_interface(j->wl) == &wl_display_interface) {
-		if (janet_getmethod(key, jwl_display_methods, out)) {
-			return 1;
-		}
-	}
 	return 0;
 }
 
@@ -863,6 +859,8 @@ JANET_FN(jwl_connect,
 JANET_MODULE_ENTRY(JanetTable *env) {
 	JanetRegExt cfuns[] = {
 		JANET_REG("connect", jwl_connect),
+		JANET_REG("display/disconnect", jwl_display_disconnect),
+		JANET_REG("display/dispatch", jwl_display_dispatch),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);

@@ -1,8 +1,12 @@
 (import lemongrass)
 (import spork/sh)
 
+(import ./wayland-native :prefix "" :export true)
+
 (def- display-methods
-  [:roundtrip (fn roundtrip [display]
+  [:dispatch display/dispatch
+   :disconnect display/disconnect
+   :roundtrip (fn roundtrip [display]
                 (def callback (:sync display))
                 (defer (:destroy callback)
                   (var done false)
@@ -163,5 +167,3 @@
   (scan-paths (array/concat @[wayland-xml]
                             (map |(string system-protocols-dir "/" $) system-protocols)
                             custom-protocols)))
-
-(import ./wayland-native :prefix "" :export true)
