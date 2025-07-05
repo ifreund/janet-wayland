@@ -18,7 +18,7 @@ const JanetAbstractType jwl_proxy_type;
 struct jwl_proxy {
 	// May be NULL if the proxy has been destroyed.
 	struct wl_proxy *wl;
-	JanetFunction *send;
+	JanetStruct methods;
 	// May be NULL if jwl_proxy_set_listener() is never called.
 	JanetFunction *listener;
 	Janet user_data;
@@ -46,11 +46,11 @@ static Janet jwl_proxy_create(struct wl_proxy *wl, JanetKeyword interface_name) 
 
 	Janet interface_namev = janet_wrap_keyword(interface_name);
 	JanetStruct interface = janet_unwrap_struct(janet_struct_get(display->interfaces, interface_namev));
-	JanetFunction *send = janet_unwrap_function(janet_struct_get(interface, janet_ckeywordv("send")));
+	JanetStruct methods = janet_unwrap_struct(janet_struct_get(interface, janet_ckeywordv("methods")));
 
 	struct jwl_proxy *j = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
 	j->wl = wl;
-	j->send = send;
+	j->methods = methods;
 	j->listener = NULL;
 	j->user_data = janet_wrap_nil();
 
@@ -81,7 +81,7 @@ static int jwl_proxy_gc(void *p, size_t len) {
 static int jwl_proxy_gcmark(void *p, size_t len) {
 	(void)len;
 	struct jwl_proxy *j = p;
-	janet_mark(janet_wrap_function(j->send));
+	janet_mark(janet_wrap_struct(j->methods));
 	if (j->listener != NULL) {
 		janet_mark(janet_wrap_function(j->listener));
 	}
@@ -667,37 +667,35 @@ JanetMethod jwl_proxy_methods[] = {
 	{NULL, NULL},
 };
 
-static int jwl_proxy_get(void *p, Janet key, Janet *out) {
+static int jwl_proxy_get(void *p, Janet keyv, Janet *out) {
 	struct jwl_proxy *j = p;
-	if (!janet_checktype(key, JANET_KEYWORD)) {
+	if (!janet_checktype(keyv, JANET_KEYWORD)) {
 		return 0;
 	}
 
-	JanetKeyword method = janet_unwrap_keyword(key);
+	JanetKeyword key = janet_unwrap_keyword(keyv);
 
-	if (janet_getmethod(method, jwl_proxy_methods, out)) {
+	if (janet_getmethod(key, jwl_proxy_methods, out)) {
 		return 1;
 	}
 
 	if (j->wl == NULL) {
 		janet_panic("proxy invalid");
 	}
+
+	Janet methodv = janet_struct_get(j->methods, keyv);
+	if (!janet_checktype(methodv, JANET_NIL)) {
+		*out = methodv;
+		return 1;
+	}
+
 	if (wl_proxy_get_interface(j->wl) == &wl_display_interface) {
-		if (janet_getmethod(method, jwl_display_methods, out)) {
-			return 1;
-		}
-		JanetStruct interface = janet_unwrap_struct(janet_struct_get(j->interfaces, janet_ckeywordv("wl_display")));
-		JanetStruct methods = janet_unwrap_struct(janet_struct_get(interface, janet_ckeywordv("methods")));
-		Janet method = janet_struct_get(methods, key);
-		if (!janet_checktype(method, JANET_NIL)) {
-			*out = method;
+		if (janet_getmethod(key, jwl_display_methods, out)) {
 			return 1;
 		}
 	}
 
-	Janet args[1] = { key };
-	*out = janet_call(j->send, 1, args);
-	return 1;
+	return 0;
 }
 
 static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {
@@ -825,14 +823,8 @@ static void jwl_check_interface(Janet interfacev, JanetStruct interfaces) {
 		jwl_check_message(events[i], interfaces);
 	}
 
-	Janet sendv = janet_struct_get(interface, janet_ckeywordv("send"));
-	if (!janet_checktype(sendv, JANET_FUNCTION)) {
-		janet_panicf("expected function interface :send, got %v", sendv);
-	}
-
 	Janet methodsv = janet_struct_get(interface, janet_ckeywordv("methods"));
-	if (!janet_checktype(methodsv, JANET_NIL) &&
-			!janet_checktype(methodsv, JANET_STRUCT)) {
+	if (!janet_checktype(methodsv, JANET_STRUCT)) {
 		janet_panicf("expected struct interface :methods, got %v", methodsv);
 	}
 }
@@ -856,8 +848,8 @@ JANET_FN(jwl_connect,
 
 	JanetStruct interface = janet_unwrap_struct(
 		janet_struct_get(interfaces, janet_ckeywordv("wl_display")));
-	JanetFunction *send = janet_unwrap_function(
-		janet_struct_get(interface, janet_ckeywordv("send")));
+	JanetStruct methods = janet_unwrap_function(
+		janet_struct_get(interface, janet_ckeywordv("methods")));
 
 	struct wl_display *wl = wl_display_connect(name);
 	if (!wl) {
@@ -870,7 +862,7 @@ JANET_FN(jwl_connect,
 
 	struct jwl_proxy *j = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
 	j->wl = (struct wl_proxy *)wl;
-	j->send = send;
+	j->methods = methods;
 	j->listener = NULL;
 	j->user_data = janet_wrap_nil();
 	j->stream = stream;

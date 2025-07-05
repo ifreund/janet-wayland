@@ -2,13 +2,13 @@
 (import spork/sh)
 
 (def- display-methods
-  {:roundtrip (fn roundtrip [display]
+  [:roundtrip (fn roundtrip [display]
                 # TODO destroy callback
                 (def callback (:sync display))
                 (var done false)
                 (:set-listener callback (fn [cb ev] (set done true)))
                 (while (not done)
-                  (:dispatch display)))})
+                  (:dispatch display)))])
 
 
 (defn- scan-args-signature [[_ attrs & _]]
@@ -131,27 +131,24 @@
       (def constructor (find (fn [[_ attrs & _]]
                                (= (attrs :type) "new_id")) args))
       [(keybab (attrs :name))
-       ~(fn [object ,;(mapcat send-params args)]
-          (:send-raw object
-                     ,opcode
-                     ,(cond
-                        generic-constructor '(keyword interface)
-                        constructor ~(keyword ,((get constructor 1) :interface)))
-                     ,(if generic-constructor 'version 0)
-                     ,(if (= (attrs :type) "destructor") {:destroy true} {})
-                     ,(tuple/brackets
-                        ;(mapcat send-args args))))])
+       (eval ~(fn [object ,;(mapcat send-params args)]
+                (:send-raw object
+                           ,opcode
+                           ,(cond
+                              generic-constructor '(keyword interface)
+                              constructor ~(keyword ,((get constructor 1) :interface)))
+                           ,(if generic-constructor 'version 0)
+                           ,(if (= (attrs :type) "destructor") {:destroy true} {})
+                           ,(tuple/brackets
+                              ;(mapcat send-args args)))))])
 
     [current-interface
      {:version (assert (scan-number (attrs :version)))
       :requests (tuple/brackets ;(map scan-message requests))
       :events (tuple/brackets ;(map scan-message events))
-      :send (eval ~(fn [request]
-                     (case request
-                       ,;(mapcat send-case requests (range (length requests)))
-                       (errorf "unknown request %v" request))))
-      :methods (if (= current-interface :wl_display)
-                 display-methods)}])
+      :methods (struct ;(mapcat send-case requests (range (length requests)))
+                       ;(if (= current-interface :wl_display)
+                          display-methods []))}])
 
   (struct ;(mapcat scan-interface interfaces)))
 
