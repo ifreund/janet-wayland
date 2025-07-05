@@ -11,4 +11,5 @@
                      [:global name interface version] (pp event)
                      [:global-remove name] (pp event))))
   (:roundtrip display)
+  (:destroy registry)
   (:disconnect display))

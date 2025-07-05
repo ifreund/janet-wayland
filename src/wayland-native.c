@@ -14,6 +14,35 @@
 // From libwayland's wayland-private.h
 #define WL_CLOSURE_MAX_ARGS 20
 
+static int jwl_interface_gc(void *p, size_t len) {
+	(void)len;
+	struct wl_interface *interface = p;
+	for (int i = 0; i < interface->method_count; i++) {
+	    janet_free(interface->methods[i].name);
+	    janet_free(interface->methods[i].signature);
+	    janet_free(interface->methods[i].types);
+	}
+	for (int i = 0; i < interface->event_count; i++) {
+	    janet_free(interface->events[i].name);
+	    janet_free(interface->events[i].signature);
+	    janet_free(interface->events[i].types);
+	}
+	janet_free(interface->name);
+	janet_free(interface->methods);
+	janet_free(interface->events);
+	return 0;
+}
+
+// Wrapping each wl_interface in an abstract type is the best way I found to
+// integrate into the GC properly. Janet doesn't guarantee an order in
+// janet_clear_memory() (How could it? There might be cycles...) so we can't
+// iterate over the wl_interfaces table in jwl_display_gc() since the table
+// might have already been free'd.
+const JanetAbstractType jwl_interface_type = {
+	"wayland/interface",
+	jwl_interface_gc,
+};
+
 struct jwl_display {
 	struct wl_display *wl;
 	// Stream wrapping the Wayland connection fd
@@ -25,7 +54,7 @@ struct jwl_display {
 	// Maps interface name (keyword) to janet interface (struct)
 	// Populated by (wayland/connect)
 	JanetStruct interfaces;
-	// Maps interface name (keyword) to wl_interface (pointer)
+	// Maps interface name (keyword) to jwl_interface (abstract)
 	JanetTable *wl_interfaces;
 };
 
@@ -90,7 +119,6 @@ static int jwl_proxy_gc(void *p, size_t len) {
 		wl_proxy_set_user_data(j->wl, NULL);
 		j->wl = NULL;
 	}
-	// TODO is it safe to free the wl_interfaces when the wl_display is garbage collected?
 	return 0;
 }
 
@@ -269,27 +297,29 @@ JANET_FN(jwl_display_dispatch,
 static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet namev);
 
+static char *jwl_strdup(const char *s) {
+	size_t len = strlen(s);
+	char *new = janet_malloc(len + 1);
+	if (new == NULL) {
+		JANET_OUT_OF_MEMORY;
+	}
+	return memcpy(new, s, len + 1);
+}
+
 static struct wl_message jwl_get_wl_message(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet messagev) {
 	JanetStruct message = janet_unwrap_struct(messagev);
 	struct wl_message wl;
 
 	Janet namev = janet_struct_get(message, janet_ckeywordv("name"));
-	wl.name = strdup((char *)janet_unwrap_string(namev));
-	if (wl.name == NULL) {
-		JANET_OUT_OF_MEMORY;
-	}
+	wl.name = jwl_strdup(janet_unwrap_string(namev));
 
 	Janet signaturev = janet_struct_get(message, janet_ckeywordv("signature"));
-	wl.signature = strdup((char *)janet_unwrap_string(signaturev));
-	if (wl.signature == NULL) {
-		JANET_OUT_OF_MEMORY;
-	}
+	wl.signature = jwl_strdup((char *)janet_unwrap_string(signaturev));
 
 	Janet typesv = janet_struct_get(message, janet_ckeywordv("types"));
 	JanetTuple types = janet_unwrap_tuple(typesv);
-
-	wl.types = malloc(janet_tuple_length(types) * sizeof(struct wl_interface *));
+	wl.types = janet_malloc(janet_tuple_length(types) * sizeof(struct wl_interface *));
 	if (wl.types == NULL) {
 		JANET_OUT_OF_MEMORY;
 	}
@@ -307,27 +337,24 @@ static struct wl_message jwl_get_wl_message(JanetStruct interfaces,
 static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 		JanetTable *wl_interfaces, Janet namev) {
 	Janet existing = janet_table_get(wl_interfaces, namev);
-	if (janet_checktype(existing, JANET_POINTER)) {
-		return janet_unwrap_pointer(existing);
+	if (janet_checktype(existing, JANET_ABSTRACT)) {
+		return janet_unwrap_abstract(existing);
 	}
 
 	JanetStruct interface = janet_unwrap_struct(janet_struct_get(interfaces, namev));
 
-	struct wl_interface *wl = malloc(sizeof(struct wl_interface));
+	struct wl_interface *wl = janet_abstract(&jwl_interface_type, sizeof(struct wl_interface));
 	if (wl == NULL) {
 		JANET_OUT_OF_MEMORY;
 	}
-	janet_table_put(wl_interfaces, namev, janet_wrap_pointer(wl));
+	janet_table_put(wl_interfaces, namev, janet_wrap_abstract(wl));
 
-	wl->name = strdup((char *)janet_unwrap_keyword(namev));
-	if (wl->name == NULL) {
-		JANET_OUT_OF_MEMORY;
-	}
+	wl->name = jwl_strdup(janet_unwrap_keyword(namev));
 	wl->version = janet_unwrap_integer(janet_struct_get(interface, janet_ckeywordv("version")));
 
 	JanetTuple requests = janet_unwrap_tuple(janet_struct_get(interface, janet_ckeywordv("requests")));
 	wl->method_count = janet_tuple_length(requests);
-	wl->methods = malloc(janet_tuple_length(requests) * sizeof(struct wl_message));
+	wl->methods = janet_malloc(janet_tuple_length(requests) * sizeof(struct wl_message));
 	if (wl->methods == NULL) {
 		JANET_OUT_OF_MEMORY;
 	}
@@ -338,7 +365,7 @@ static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 
 	JanetTuple events = janet_unwrap_tuple(janet_struct_get(interface, janet_ckeywordv("events")));
 	wl->event_count = janet_tuple_length(events);
-	wl->events = malloc(janet_tuple_length(events) * sizeof(struct wl_message));
+	wl->events = janet_malloc(janet_tuple_length(events) * sizeof(struct wl_message));
 	if (wl->events == NULL) {
 		JANET_OUT_OF_MEMORY;
 	}
@@ -375,8 +402,8 @@ static const char *jwl_signature_iter(const char *s, char *type, bool *allow_nul
 }
 
 JANET_FN(jwl_proxy_request_raw,
-        "(proxy/request-raw proxy opcode interface version flags args",
-        "") {
+		"(proxy/request-raw proxy opcode interface version flags args",
+		"") {
 	janet_fixarity(argc, 6);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -652,7 +679,7 @@ JANET_FN(jwl_proxy_destroy,
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
 	if (j->wl == (struct wl_proxy *)j->display->wl) {
-	    janet_panic("display may only be destroyed with display/disconnect");
+		janet_panic("display may only be destroyed with display/disconnect");
 	}
 	wl_proxy_destroy(j->wl);
 	j->wl = NULL;
