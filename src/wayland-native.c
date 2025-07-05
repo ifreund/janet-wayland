@@ -655,6 +655,7 @@ JANET_FN(jwl_proxy_destroy,
 	    janet_panic("display may only be destroyed with display/disconnect");
 	}
 	wl_proxy_destroy(j->wl);
+	j->wl = NULL;
 	return janet_wrap_nil();
 }
 
