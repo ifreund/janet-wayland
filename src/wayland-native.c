@@ -18,14 +18,14 @@ static int jwl_interface_gc(void *p, size_t len) {
 	(void)len;
 	struct wl_interface *interface = p;
 	for (int i = 0; i < interface->method_count; i++) {
-	    janet_free(interface->methods[i].name);
-	    janet_free(interface->methods[i].signature);
-	    janet_free(interface->methods[i].types);
+		janet_free(interface->methods[i].name);
+		janet_free(interface->methods[i].signature);
+		janet_free(interface->methods[i].types);
 	}
 	for (int i = 0; i < interface->event_count; i++) {
-	    janet_free(interface->events[i].name);
-	    janet_free(interface->events[i].signature);
-	    janet_free(interface->events[i].types);
+		janet_free(interface->events[i].name);
+		janet_free(interface->events[i].signature);
+		janet_free(interface->events[i].types);
 	}
 	janet_free(interface->name);
 	janet_free(interface->methods);
@@ -377,6 +377,15 @@ static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 	return wl;
 }
 
+static const char *jwl_signature_skip_version(const char *s) {
+	for (; *s; s++) {
+		if (*s < '0' || *s > '9') {
+			break;
+		}
+	}
+	return s;
+}
+
 static const char *jwl_signature_iter(const char *s, char *type, bool *allow_null) {
 	*allow_null = false;
 	for (; *s; s++) {
@@ -433,7 +442,7 @@ JANET_FN(jwl_proxy_request_raw,
 	struct wl_array arrays[WL_CLOSURE_MAX_ARGS];
 
 	const struct wl_message *message = &wl_proxy_get_interface(j->wl)->methods[opcode];
-	const char *signature = message->signature;
+	const char *signature = jwl_signature_skip_version(message->signature);
 	for (int32_t i = 0; i < janet_tuple_length(args); i++) {
 		if (!*signature) {
 			janet_panicf("too many arguments");
@@ -555,7 +564,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	eventvs[0] = snake_to_kebab_keywordv(msg->name);
 
 	int32_t i = 0;
-	const char *signature = msg->signature;
+	const char *signature = jwl_signature_skip_version(msg->signature);
 	while (*signature) {
 		char type;
 		bool allow_null;
