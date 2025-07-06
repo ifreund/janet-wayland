@@ -131,7 +131,8 @@
       (def constructor (find (fn [[_ attrs & _]]
                                (= (attrs :type) "new_id")) args))
       [(keybab (attrs :name))
-       (eval ~(fn [object ,;(mapcat request-params args)]
+       (eval ~(fn ,(symbol (keybab current-interface) "/" (keybab (attrs :name)))
+                [object ,;(mapcat request-params args)]
                 (,proxy/request-raw
                   object
                   ,opcode
