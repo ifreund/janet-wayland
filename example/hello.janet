@@ -64,4 +64,19 @@
   (while running
     (:dispatch display))
 
+  # It isn't strictly necessary to destroy these before exiting, leaking
+  # won't cause any issues in general. However, destroying them here makes
+  # it easier for me to use valgrind to debug leaks while working on these
+  # bindings.
+  (:destroy xdg-toplevel)
+  (:destroy xdg-surface)
+  (:destroy viewport)
+  (:destroy surface)
+  (:destroy buffer)
+  (:destroy single-pixel-buffer-man)
+  (:destroy wm-base)
+  (:destroy viewporter)
+  (:destroy compositor)
+  (:destroy registry)
+
   (:disconnect display))

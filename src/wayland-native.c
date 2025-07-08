@@ -90,16 +90,21 @@ static Janet jwl_proxy_create(struct jwl_display *display, struct wl_proxy *wl, 
 	JanetStruct interface = janet_unwrap_struct(janet_struct_get(display->interfaces, interface_namev));
 	JanetStruct methods = janet_unwrap_struct(janet_struct_get(interface, janet_ckeywordv("methods")));
 
-	struct jwl_proxy *j = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
-	j->display = display;
-	j->wl = wl;
-	j->methods = methods;
-	j->listener = NULL;
-	j->user_data = janet_wrap_nil();
+	struct jwl_proxy *proxy = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
+	proxy->display = display;
+	proxy->wl = wl;
+	proxy->methods = methods;
+	proxy->listener = NULL;
+	proxy->user_data = janet_wrap_nil();
 
-	wl_proxy_set_user_data(j->wl, j);
+	wl_proxy_set_user_data(proxy->wl, proxy);
 
-	return janet_wrap_abstract(j);
+	// Keep the proxy alive even if it is only referenced by libwayland.
+	// This is necessary to handle the case where the user creates a proxy
+	// and sets a listener but then doesn't store the proxy anywhere.
+	Janet proxyv = janet_wrap_abstract(proxy);
+	janet_gcroot(proxyv);
+	return proxyv;
 }
 
 static void jwl_proxy_validate(struct jwl_proxy *proxy) {
@@ -109,17 +114,6 @@ static void jwl_proxy_validate(struct jwl_proxy *proxy) {
 	if (proxy->display->wl == NULL) {
 		janet_panic("display disconnected");
 	}
-}
-
-static int jwl_proxy_gc(void *p, size_t len) {
-	(void)len;
-	struct jwl_proxy *j = p;
-	if (j->wl != NULL) {
-		assert(wl_proxy_get_user_data(j->wl) == j);
-		wl_proxy_set_user_data(j->wl, NULL);
-		j->wl = NULL;
-	}
-	return 0;
 }
 
 static int jwl_proxy_gcmark(void *p, size_t len) {
@@ -139,11 +133,12 @@ JANET_FN(jwl_display_disconnect,
 		"Disconnect from the Wayland server and destroy the display."
 		"Invalidates all objects associated with the display.") {
 	janet_fixarity(argc, 1);
-	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
-	jwl_proxy_validate(j);
-	wl_display_disconnect(j->display->wl);
-	j->wl = NULL;
-	j->display->wl = NULL;
+	struct jwl_proxy *proxy = janet_getabstract(argv, 0, &jwl_proxy_type);
+	jwl_proxy_validate(proxy);
+	wl_display_disconnect(proxy->display->wl);
+	janet_gcunroot(janet_wrap_abstract(proxy));
+	proxy->wl = NULL;
+	proxy->display->wl = NULL;
 	return janet_wrap_nil();
 }
 
@@ -520,6 +515,7 @@ JANET_FN(jwl_proxy_request_raw,
 	struct wl_proxy *new_wl = wl_proxy_marshal_array_flags(j->wl, opcode,
 		wl_interface, version, wl_flags, wl_args);
 	if ((wl_flags & WL_MARSHAL_FLAG_DESTROY) != 0) {
+		janet_gcunroot(janet_wrap_abstract(j));
 		j->wl = NULL;
 	}
 	if (new_wl == NULL) {
@@ -660,6 +656,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	// invoked by libwayland.
 	if (destructor && j->wl != NULL) {
 		wl_proxy_destroy(j->wl);
+		janet_gcunroot(janet_wrap_abstract(j));
 		j->wl = NULL;
 	}
 
@@ -703,6 +700,7 @@ JANET_FN(jwl_proxy_destroy,
 		janet_panic("display may only be destroyed with display/disconnect");
 	}
 	wl_proxy_destroy(j->wl);
+	janet_gcunroot(janet_wrap_abstract(j));
 	j->wl = NULL;
 	return janet_wrap_nil();
 }
@@ -730,7 +728,7 @@ static void jwl_proxy_tostring(void *p, JanetBuffer *buffer) {
 
 const JanetAbstractType jwl_proxy_type = {
 	"wayland/proxy",
-	jwl_proxy_gc,
+	NULL, // gc
 	jwl_proxy_gcmark,
 	jwl_proxy_get,
 	NULL, // put
@@ -861,13 +859,8 @@ JANET_FN(jwl_connect,
 		jwl_check_interface(interfaces[i].value, interfaces);
 	}
 
-	JanetStruct interface = janet_unwrap_struct(
-		janet_struct_get(interfaces, janet_ckeywordv("wl_display")));
-	JanetStruct methods = janet_unwrap_struct(
-		janet_struct_get(interface, janet_ckeywordv("methods")));
-
 	struct wl_display *wl = wl_display_connect(name);
-	if (!wl) {
+	if (wl == NULL) {
 		janet_panicf("unable to connect to wayland server: %s", strerror(errno));
 	}
 
@@ -884,15 +877,7 @@ JANET_FN(jwl_connect,
 	display->interfaces = interfaces;
 	display->wl_interfaces = janet_table(0);
 
-	struct jwl_proxy *j = janet_abstract(&jwl_proxy_type, sizeof(struct jwl_proxy));
-	j->display = display;
-	j->wl = (struct wl_proxy *)wl;
-	j->methods = methods;
-	j->listener = NULL;
-	j->user_data = janet_wrap_nil();
-	wl_proxy_set_user_data(j->wl, j);
-
-	return janet_wrap_abstract(j);
+	return jwl_proxy_create(display, (struct wl_proxy *)wl, janet_ckeyword("wl_display"));
 }
 
 JANET_MODULE_ENTRY(JanetTable *env) {
