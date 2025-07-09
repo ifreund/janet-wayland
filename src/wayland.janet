@@ -60,7 +60,9 @@
   [(keyword (attrs :name))
    (if (= (attrs :bitfield) "true")
      {:to-value (fn [set]
-                  (bor ;(map to-value (keys set))))
+                  (bor ;(->> (pairs set)
+                             (keep (fn [[e v]] (if v e)))
+                             (map to-value))))
       :to-enum (fn [value]
                  (struct ;(->> (pairs values-enums)
                                (filter (fn [[v e]] (= v (band value v))))
