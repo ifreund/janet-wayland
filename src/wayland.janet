@@ -5,16 +5,14 @@
 
 (defn display/dispatch [display]
   (display/send-recv display)
-  (loop [[listener proxy event user-data] :iterate (display/pop-event display)]
-    (if (nil? user-data)
-      (listener proxy event)
-      (listener proxy event user-data))))
+  (loop [[handler event] :iterate (display/pop-event display)]
+    (handler event)))
 
 (defn display/roundtrip [display]
   (def callback (:sync display))
   (defer (:destroy callback)
     (var done false)
-    (:set-listener callback (fn [_ _] (set done true)))
+    (:set-handler callback (fn [_] (set done true)))
     (while (not done)
       (display/dispatch display))))
 
@@ -156,7 +154,8 @@
       :requests (tuple/brackets ;(map scan-message requests))
       :events (tuple/brackets ;(map scan-message events))
       :methods (struct
-                 :set-listener proxy/set-listener
+                 :set-handler proxy/set-handler
+                 :set-user-data proxy/set-user-data
                  :get-user-data proxy/get-user-data
                  ;(if (= current-interface :wl_display)
                     [:dispatch display/dispatch

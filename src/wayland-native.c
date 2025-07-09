@@ -86,8 +86,8 @@ struct jwl_proxy {
 	// May be NULL if the proxy has been destroyed.
 	struct wl_proxy *wl;
 	JanetStruct methods;
-	// May be nil if jwl_proxy_set_listener() is never called.
-	Janet listener;
+	// May be nil if jwl_proxy_set_handler() is never called.
+	Janet handler;
 	Janet user_data;
 };
 
@@ -100,14 +100,14 @@ static Janet jwl_proxy_create(struct jwl_display *display, struct wl_proxy *wl, 
 	proxy->display = display;
 	proxy->wl = wl;
 	proxy->methods = methods;
-	proxy->listener = janet_wrap_nil();
+	proxy->handler = janet_wrap_nil();
 	proxy->user_data = janet_wrap_nil();
 
 	wl_proxy_set_user_data(proxy->wl, proxy);
 
 	// Keep the proxy alive even if it is only referenced by libwayland.
 	// This is necessary to handle the case where the user creates a proxy
-	// and sets a listener but then doesn't store the proxy anywhere.
+	// and sets a handler but then doesn't store the proxy anywhere.
 	Janet proxyv = janet_wrap_abstract(proxy);
 	janet_gcroot(proxyv);
 	return proxyv;
@@ -135,7 +135,7 @@ static int jwl_proxy_gcmark(void *p, size_t len) {
 	struct jwl_proxy *j = p;
 	janet_mark(janet_wrap_abstract(j->display));
 	janet_mark(janet_wrap_struct(j->methods));
-	janet_mark(j->listener);
+	janet_mark(j->handler);
 	janet_mark(j->user_data);
 	return 0;
 }
@@ -156,8 +156,8 @@ JANET_FN(jwl_display_disconnect,
 
 JANET_FN(jwl_display_pop_event,
 		"(display/pop-event display)",
-		"Pop an event from the event queue and return a tuple of "
-		"[listener proxy event user-data]") {
+		"Pop an event from the event queue and return the tuple [handler event]."
+		"Returns nil if the event queue is empty.") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *proxy = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_display_validate(proxy);
@@ -166,8 +166,8 @@ JANET_FN(jwl_display_pop_event,
 	assert(janet_type(display->event) == JANET_NIL);
 	assert(display->event_proxy == NULL);
 
-	// There might not be a listener set for every event dispatched.
-	// Loop until an event is dispatched that we have set a listener for.
+	// There might not be a handler set for every event dispatched.
+	// Loop until an event is dispatched that has a handler set.
 	while (display->event_proxy == NULL) {
 		int dispatched = wl_display_dispatch_pending_single(display->wl);
 		if (dispatched < 0) {
@@ -180,19 +180,17 @@ JANET_FN(jwl_display_pop_event,
 	}
 	struct jwl_proxy *event_proxy = display->event_proxy;
 	assert(event_proxy != NULL);
-	assert(janet_type(event_proxy->listener) != JANET_NIL);
+	assert(janet_type(event_proxy->handler) != JANET_NIL);
 	assert(janet_type(display->event) != JANET_NIL);
 
-	Janet ret[4] = {
-		event_proxy->listener,
-		janet_wrap_abstract(event_proxy),
+	Janet ret[2] = {
+		event_proxy->handler,
 		display->event,
-		event_proxy->user_data,
 	};
 	display->event = janet_wrap_nil();
 	display->event_proxy = NULL;
 
-	return janet_wrap_tuple(janet_tuple_n(ret, 4));
+	return janet_wrap_tuple(janet_tuple_n(ret, 2));
 }
 
 void jwl_dispatch_end(struct jwl_display *display, Janet value, JanetSignal sig) {
@@ -652,27 +650,35 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	return 0;
 }
 
-JANET_FN(jwl_proxy_set_listener,
-		"(proxy/set-listener proxy listener &opt user-data)",
+JANET_FN(jwl_proxy_set_handler,
+		"(proxy/set-handler proxy handler)",
 		"") {
-	janet_arity(argc, 2, 3);
+	janet_fixarity(argc, 2);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
 	(void)janet_getfunction(argv, 1);
-	if (janet_type(j->listener) != JANET_NIL) {
-		janet_panic("proxy already has a listener");
+	if (janet_type(j->handler) != JANET_NIL) {
+		janet_panic("proxy already has an event handler");
 	}
-	j->listener = argv[1];
-	if (argc == 3) {
-		j->user_data = argv[2];
-	}
+	j->handler = argv[1];
 	wl_proxy_add_dispatcher(j->wl, jwl_proxy_dispatcher, NULL, j);
 	return janet_wrap_nil();
 }
 
+JANET_FN(jwl_proxy_set_user_data,
+		"(proxy/set-user-data proxy value)",
+		"Set a value that can later be retrieved with proxy/get-user-data. "
+		"Returns the value passed.") {
+	janet_fixarity(argc, 2);
+	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
+	jwl_proxy_validate(j);
+	j->user_data = argv[1];
+	return j->user_data;
+}
+
 JANET_FN(jwl_proxy_get_user_data,
 		"(proxy/get-user-data proxy)",
-		"") {
+		"Returns the latest value set with proxy/set-user-data") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
@@ -875,7 +881,8 @@ JANET_MODULE_ENTRY(JanetTable *env) {
 		JANET_REG("display/disconnect", jwl_display_disconnect),
 		JANET_REG("display/send-recv", jwl_display_send_recv),
 		JANET_REG("display/pop-event", jwl_display_pop_event),
-		JANET_REG("proxy/set-listener", jwl_proxy_set_listener),
+		JANET_REG("proxy/set-handler", jwl_proxy_set_handler),
+		JANET_REG("proxy/set-user-data", jwl_proxy_set_user_data),
 		JANET_REG("proxy/get-user-data", jwl_proxy_get_user_data),
 		JANET_REG("proxy/request-raw", jwl_proxy_request_raw),
 		JANET_REG("proxy/destroy", jwl_proxy_destroy),
