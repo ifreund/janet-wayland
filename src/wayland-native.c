@@ -16,20 +16,22 @@
 
 static int jwl_interface_gc(void *p, size_t len) {
 	(void)len;
+	// Need to cast away a lot of mutability here to silence compiler warnings.
+	// All of these things we are freeing were allocated in jwl_get_wl_interface.
 	struct wl_interface *interface = p;
 	for (int i = 0; i < interface->method_count; i++) {
-		janet_free(interface->methods[i].name);
-		janet_free(interface->methods[i].signature);
+		janet_free((char *)interface->methods[i].name);
+		janet_free((char *)interface->methods[i].signature);
 		janet_free(interface->methods[i].types);
 	}
 	for (int i = 0; i < interface->event_count; i++) {
-		janet_free(interface->events[i].name);
-		janet_free(interface->events[i].signature);
+		janet_free((char *)interface->events[i].name);
+		janet_free((char *)interface->events[i].signature);
 		janet_free(interface->events[i].types);
 	}
-	janet_free(interface->name);
-	janet_free(interface->methods);
-	janet_free(interface->events);
+	janet_free((char *)interface->name);
+	janet_free((struct wl_message *)interface->methods);
+	janet_free((struct wl_message *)interface->events);
 	return 0;
 }
 
@@ -48,23 +50,27 @@ struct jwl_display {
 	// Stream wrapping the Wayland connection fd
 	JanetStream *stream;
 	JanetFiber *fiber;
-	// Results of the janet_pcall() in jwl_proxy_dispatcher().
-	JanetSignal sig;
-	Janet ret;
 	// Maps interface name (keyword) to janet interface (struct)
 	// Populated by (wayland/connect)
 	JanetStruct interfaces;
 	// Maps interface name (keyword) to jwl_interface (abstract)
 	JanetTable *wl_interfaces;
+	// Event and target proxy set by jwl_proxy_dispatcher() to be
+	// returned by jwl_display_get_event()
+	Janet event;
+	struct jwl_proxy *event_proxy;
 };
 
 static int jwl_display_gcmark(void *p, size_t len) {
 	(void)len;
 	struct jwl_display *display = p;
 	janet_mark(janet_wrap_abstract(display->stream));
-	janet_mark(display->ret);
 	janet_mark(janet_wrap_struct(display->interfaces));
 	janet_mark(janet_wrap_table(display->wl_interfaces));
+	janet_mark(display->event);
+	if (display->event_proxy != NULL) {
+		janet_mark(janet_wrap_abstract(display->event_proxy));
+	}
 	return 0;
 }
 
@@ -80,8 +86,8 @@ struct jwl_proxy {
 	// May be NULL if the proxy has been destroyed.
 	struct wl_proxy *wl;
 	JanetStruct methods;
-	// May be NULL if jwl_proxy_set_listener() is never called.
-	JanetFunction *listener;
+	// May be nil if jwl_proxy_set_listener() is never called.
+	Janet listener;
 	Janet user_data;
 };
 
@@ -94,7 +100,7 @@ static Janet jwl_proxy_create(struct jwl_display *display, struct wl_proxy *wl, 
 	proxy->display = display;
 	proxy->wl = wl;
 	proxy->methods = methods;
-	proxy->listener = NULL;
+	proxy->listener = janet_wrap_nil();
 	proxy->user_data = janet_wrap_nil();
 
 	wl_proxy_set_user_data(proxy->wl, proxy);
@@ -116,14 +122,20 @@ static void jwl_proxy_validate(struct jwl_proxy *proxy) {
 	}
 }
 
+static void jwl_display_validate(struct jwl_proxy *proxy) {
+	jwl_proxy_validate(proxy);
+	if ((struct wl_proxy *)proxy->display->wl != proxy->wl) {
+		janet_panicf("expected <wayland/proxy (wl_display#1)> got %v",
+			janet_wrap_abstract(proxy));
+	}
+}
+
 static int jwl_proxy_gcmark(void *p, size_t len) {
 	(void)len;
 	struct jwl_proxy *j = p;
 	janet_mark(janet_wrap_abstract(j->display));
 	janet_mark(janet_wrap_struct(j->methods));
-	if (j->listener != NULL) {
-		janet_mark(janet_wrap_function(j->listener));
-	}
+	janet_mark(j->listener);
 	janet_mark(j->user_data);
 	return 0;
 }
@@ -134,7 +146,7 @@ JANET_FN(jwl_display_disconnect,
 		"Invalidates all objects associated with the display.") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *proxy = janet_getabstract(argv, 0, &jwl_proxy_type);
-	jwl_proxy_validate(proxy);
+	jwl_display_validate(proxy);
 	wl_display_disconnect(proxy->display->wl);
 	janet_gcunroot(janet_wrap_abstract(proxy));
 	proxy->wl = NULL;
@@ -142,52 +154,57 @@ JANET_FN(jwl_display_disconnect,
 	return janet_wrap_nil();
 }
 
-JanetSignal jwl_dispatch_pending(struct jwl_display *display, Janet *out) {
-	assert(display->sig == JANET_SIGNAL_OK);
-	assert(janet_checktype(display->ret, JANET_NIL));
+JANET_FN(jwl_display_pop_event,
+		"(display/pop-event display)",
+		"Pop an event from the event queue and return a tuple of "
+		"[listener proxy event user-data]") {
+	janet_fixarity(argc, 1);
+	struct jwl_proxy *proxy = janet_getabstract(argv, 0, &jwl_proxy_type);
+	jwl_display_validate(proxy);
+	struct jwl_display *display = proxy->display;
 
-	while (display->sig == JANET_SIGNAL_OK) {
-		int dispatched =
-			wl_display_dispatch_pending_single(display->wl);
+	assert(janet_type(display->event) == JANET_NIL);
+	assert(display->event_proxy == NULL);
+
+	// There might not be a listener set for every event dispatched.
+	// Loop until an event is dispatched that we have set a listener for.
+	while (display->event_proxy == NULL) {
+		int dispatched = wl_display_dispatch_pending_single(display->wl);
 		if (dispatched < 0) {
-			*out = janet_cstringv("failed to dispatch pending events");
-			return JANET_SIGNAL_ERROR;
+			janet_panicf("failed to dispatch pending events: %s", strerror(errno));
 		}
 		if (dispatched == 0) {
-			break;
+			return janet_wrap_nil();
 		}
+		assert(dispatched == 1);
 	}
+	struct jwl_proxy *event_proxy = display->event_proxy;
+	assert(event_proxy != NULL);
+	assert(janet_type(event_proxy->listener) != JANET_NIL);
+	assert(janet_type(display->event) != JANET_NIL);
 
-	JanetSignal sig = display->sig;
-	if (sig == JANET_SIGNAL_OK) {
-		*out = janet_wrap_nil();
-	} else {
-		*out = display->ret;
-	}
-	display->sig = JANET_SIGNAL_OK;
-	display->ret = janet_wrap_nil();
+	Janet ret[4] = {
+		event_proxy->listener,
+		janet_wrap_abstract(event_proxy),
+		display->event,
+		event_proxy->user_data,
+	};
+	display->event = janet_wrap_nil();
+	display->event_proxy = NULL;
 
-	return sig;
+	return janet_wrap_tuple(janet_tuple_n(ret, 4));
 }
 
-void jwl_dispatch_end(struct jwl_display *display) {
+void jwl_dispatch_end(struct jwl_display *display, Janet value, JanetSignal sig) {
 	assert(display->fiber != NULL);
 	JanetFiber *fiber = display->fiber;
 	display->fiber = NULL;
-
-	Janet out;
-	JanetSignal sig = jwl_dispatch_pending(display, &out);
-	janet_schedule_signal(fiber, out, sig);
+	janet_schedule_signal(fiber, value, sig);
 	janet_async_end(fiber);
 }
 
 void jwl_dispatch_cancel(struct jwl_display *display, JanetString msg) {
-	assert(display->fiber != NULL);
-	JanetFiber *fiber = display->fiber;
-	display->fiber = NULL;
-
-	janet_cancel(fiber, janet_wrap_string(msg));
-	janet_async_end(fiber);
+	jwl_dispatch_end(display, janet_wrap_string(msg), JANET_SIGNAL_ERROR);
 }
 
 void jwl_dispatch_read_callback(JanetFiber *fiber, JanetAsyncEvent event) {
@@ -202,7 +219,7 @@ void jwl_dispatch_read_callback(JanetFiber *fiber, JanetAsyncEvent event) {
 				"failed to read from Wayland fd: %s", strerror(errno)));
 			break;
 		}
-		jwl_dispatch_end(display);
+		jwl_dispatch_end(display, janet_wrap_nil(), JANET_SIGNAL_OK);
 		break;
 	}
 	case JANET_ASYNC_EVENT_ERR:
@@ -270,19 +287,18 @@ void jwl_dispatch_write_callback(JanetFiber *fiber, JanetAsyncEvent event) {
 	}
 }
 
-// Implementation of wl_display_dispatch() that integrates with the janet event loop
-JANET_FN(jwl_display_dispatch,
-		"(display/dispatch display)",
-		"Write requests to the Wayland connection, read events from the server, "
-		"and invoke event listeners. Uses non-blocking I/O integrated with "
-		"Janet's event loop.") {
+JANET_FN(jwl_display_send_recv,
+		"(display/send-recv display)",
+		"Send pending requests to the Wayland server and queue received events."
+		"After this function returns, (display/pop-event) should be called "
+		"repeatedly to process all queued events before calling this function again. "
+		"This function will return immediately if there are events queued. "
+		"Uses non-blocking I/O integrated with Janet's event loop.") {
 	janet_fixarity(argc, 1);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
-	jwl_proxy_validate(j);
+	jwl_display_validate(j);
 	if (wl_display_prepare_read(j->display->wl) == -1) {
-		Janet out;
-		JanetSignal sig = jwl_dispatch_pending(j->display, &out);
-		janet_signalv(sig, out);
+		return janet_wrap_nil();
 	}
 	struct jwl_display **ev_state = janet_malloc(sizeof(struct jwl_display **));
 	*ev_state = j->display;
@@ -307,10 +323,10 @@ static struct wl_message jwl_get_wl_message(JanetStruct interfaces,
 	struct wl_message wl;
 
 	Janet namev = janet_struct_get(message, janet_ckeywordv("name"));
-	wl.name = jwl_strdup(janet_unwrap_string(namev));
+	wl.name = jwl_strdup((const char *)janet_unwrap_string(namev));
 
 	Janet signaturev = janet_struct_get(message, janet_ckeywordv("signature"));
-	wl.signature = jwl_strdup((char *)janet_unwrap_string(signaturev));
+	wl.signature = jwl_strdup((const char *)janet_unwrap_string(signaturev));
 
 	Janet typesv = janet_struct_get(message, janet_ckeywordv("types"));
 	JanetTuple types = janet_unwrap_tuple(typesv);
@@ -344,7 +360,7 @@ static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 	}
 	janet_table_put(wl_interfaces, namev, janet_wrap_abstract(wl));
 
-	wl->name = jwl_strdup(janet_unwrap_keyword(namev));
+	wl->name = jwl_strdup((const char *)janet_unwrap_keyword(namev));
 	wl->version = janet_unwrap_integer(janet_struct_get(interface, janet_ckeywordv("version")));
 
 	JanetTuple requests = janet_unwrap_tuple(janet_struct_get(interface, janet_ckeywordv("requests")));
@@ -509,7 +525,7 @@ JANET_FN(jwl_proxy_request_raw,
 	// some event that wakes up the fiber reading from the Wayland fd.
 	if (j->display->fiber != NULL) {
 		wl_display_cancel_read(j->display->wl);
-		jwl_dispatch_end(j->display);
+		jwl_dispatch_end(j->display, janet_wrap_nil(), JANET_SIGNAL_OK);
 	}
 
 	struct wl_proxy *new_wl = wl_proxy_marshal_array_flags(j->wl, opcode,
@@ -530,14 +546,14 @@ JANET_FN(jwl_proxy_request_raw,
 }
 
 static Janet snake_to_kebab_keywordv(const char *snake) {
-	char *kebab = strdup(snake);
+	char *kebab = jwl_strdup(snake);
 	for (char *i = kebab; *i; i++) {
 		if (*i == '_') {
 			*i = '-';
 		}
 	}
 	Janet ret = janet_ckeywordv(kebab);
-	free(kebab);
+	janet_free(kebab);
 	return ret;
 }
 
@@ -553,7 +569,6 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 	assert(opcode < janet_tuple_length(events));
 	JanetStruct event_info = janet_unwrap_struct(events[opcode]);
 	JanetTuple enums = janet_unwrap_tuple(janet_struct_get(event_info, janet_ckeywordv("enums")));
-	bool destructor = janet_truthy(janet_struct_get(event_info, janet_ckeywordv("destructor")));
 
 	Janet eventvs[WL_CLOSURE_MAX_ARGS + 1];
 
@@ -569,15 +584,12 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		case 'i': {
 			Janet v = janet_wrap_number(wl_args[i].i);
 			if (janet_checktype(enums[i], JANET_FUNCTION)) {
-				Janet out;
-				JanetSignal sig = janet_pcall(janet_unwrap_function(enums[i]),
-					1, (const Janet []){v}, &out, NULL);
-				if (sig != JANET_SIGNAL_OK) {
-					j->display->sig = sig;
-					j->display->ret = out;
-					return 0;
-				}
-				eventvs[i + 1] = out;
+				// It's not great to use janet_call inside this function as this
+				// function is invoked by libwayland and long jumping out of libwayland
+				// in the case of an error would be bad. However, the function we are
+				// calling is a pretty simple function generated by wayland.janet which
+				// we control.
+				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, &v);
 			} else {
 				eventvs[i + 1] = v;
 			}
@@ -586,15 +598,7 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		case 'u': {
 			Janet v = janet_wrap_number(wl_args[i].u);
 			if (janet_checktype(enums[i], JANET_FUNCTION)) {
-				Janet out;
-				JanetSignal sig = janet_pcall(janet_unwrap_function(enums[i]),
-					1, (const Janet []){v}, &out, NULL);
-				if (sig != JANET_SIGNAL_OK) {
-					j->display->sig = sig;
-					j->display->ret = out;
-					return 0;
-				}
-				eventvs[i + 1] = out;
+				eventvs[i + 1] = janet_call(janet_unwrap_function(enums[i]), 1, &v);
 			} else {
 				eventvs[i + 1] = v;
 			}
@@ -640,25 +644,10 @@ static int jwl_proxy_dispatcher(const void *user_data, void *target, uint32_t op
 		i++;
 	}
 
-	Janet event = janet_wrap_tuple(janet_tuple_n(eventvs, i + 1));
-	if (janet_checktype(j->user_data, JANET_NIL)) {
-		j->display->sig = janet_pcall(j->listener,
-			2, (const Janet []){janet_wrap_abstract(j), event},
-			&j->display->ret, NULL);
-	} else {
-		j->display->sig = janet_pcall(j->listener,
-			3, (const Janet []){janet_wrap_abstract(j), event, j->user_data},
-			&j->display->ret, NULL);
-	}
-
-	// I think it's nicest to not crash if the user destroys the proxy in their
-	// listener. Also, we can't panic here anyways since this function is
-	// invoked by libwayland.
-	if (destructor && j->wl != NULL) {
-		wl_proxy_destroy(j->wl);
-		janet_gcunroot(janet_wrap_abstract(j));
-		j->wl = NULL;
-	}
+	assert(janet_type(j->display->event) == JANET_NIL);
+	assert(j->display->event_proxy == NULL);
+	j->display->event = janet_wrap_tuple(janet_tuple_n(eventvs, i + 1));
+	j->display->event_proxy = j;
 
 	return 0;
 }
@@ -669,11 +658,11 @@ JANET_FN(jwl_proxy_set_listener,
 	janet_arity(argc, 2, 3);
 	struct jwl_proxy *j = janet_getabstract(argv, 0, &jwl_proxy_type);
 	jwl_proxy_validate(j);
-	JanetFunction *listener = janet_getfunction(argv, 1);
-	if (j->listener != NULL) {
+	(void)janet_getfunction(argv, 1);
+	if (janet_type(j->listener) != JANET_NIL) {
 		janet_panic("proxy already has a listener");
 	}
-	j->listener = listener;
+	j->listener = argv[1];
 	if (argc == 3) {
 		j->user_data = argv[2];
 	}
@@ -872,10 +861,10 @@ JANET_FN(jwl_connect,
 	display->wl = wl;
 	display->stream = stream;
 	display->fiber = NULL;
-	display->sig = JANET_SIGNAL_OK;
-	display->ret = janet_wrap_nil();
 	display->interfaces = interfaces;
 	display->wl_interfaces = janet_table(0);
+	display->event = janet_wrap_nil();
+	display->event_proxy = NULL;
 
 	return jwl_proxy_create(display, (struct wl_proxy *)wl, janet_ckeyword("wl_display"));
 }
@@ -884,7 +873,8 @@ JANET_MODULE_ENTRY(JanetTable *env) {
 	JanetRegExt cfuns[] = {
 		JANET_REG("connect", jwl_connect),
 		JANET_REG("display/disconnect", jwl_display_disconnect),
-		JANET_REG("display/dispatch", jwl_display_dispatch),
+		JANET_REG("display/send-recv", jwl_display_send_recv),
+		JANET_REG("display/pop-event", jwl_display_pop_event),
 		JANET_REG("proxy/set-listener", jwl_proxy_set_listener),
 		JANET_REG("proxy/get-user-data", jwl_proxy_get_user_data),
 		JANET_REG("proxy/request-raw", jwl_proxy_request_raw),

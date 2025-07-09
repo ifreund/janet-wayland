@@ -3,12 +3,20 @@
 
 (import ./wayland-native :prefix "" :export true)
 
+(defn display/dispatch [display]
+  (display/send-recv display)
+  (loop [[listener proxy event user-data] :iterate (display/pop-event display)]
+    (if (nil? user-data)
+      (listener proxy event)
+      (listener proxy event user-data))))
+
 (defn display/roundtrip [display]
   (def callback (:sync display))
-  (var done false)
-  (:set-listener callback (fn [_ _] (set done true)))
-  (while (not done)
-    (:dispatch display)))
+  (defer (:destroy callback)
+    (var done false)
+    (:set-listener callback (fn [_ _] (set done true)))
+    (while (not done)
+      (display/dispatch display))))
 
 (defn- scan-args-signature [[_ attrs & _]]
   (string/join
@@ -106,8 +114,7 @@
        :signature (string (or (attrs :since) "")
                           (string/join (map scan-args-signature args)))
        :types (tuple/brackets ;(mapcat scan-args-types args))
-       :enums (tuple/brackets ;(mapcat scan-args-enums args))
-       :destructor (if (= "destructor" (attrs :type)) true)})
+       :enums (tuple/brackets ;(mapcat scan-args-enums args))})
 
     (defn request-params [[_ attrs & _]]
       (case (attrs :type)
