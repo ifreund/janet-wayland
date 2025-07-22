@@ -113,8 +113,8 @@
       {:name (attrs :name)
        :signature (string (or (attrs :since) "")
                           (string/join (map scan-args-signature args)))
-       :types (tuple/brackets ;(mapcat scan-args-types args))
-       :enums (tuple/brackets ;(mapcat scan-args-enums args))})
+       :types (mapcat scan-args-types args)
+       :enums (mapcat scan-args-enums args)})
 
     (defn request-params [[_ attrs & _]]
       (case (attrs :type)
@@ -148,13 +148,12 @@
                      constructor ~(keyword ,((get constructor 1) :interface)))
                   ,(if generic-constructor 'version 0)
                   ,(if (= (attrs :type) "destructor") {:destroy true} {})
-                  ,(tuple/brackets
-                     ;(mapcat request-args args)))))])
+                  ,(tuple/brackets ;(mapcat request-args args)))))])
 
     [current-interface
      {:version (assert (scan-number (attrs :version)))
-      :requests (tuple/brackets ;(map scan-message requests))
-      :events (tuple/brackets ;(map scan-message events))
+      :requests (map scan-message requests)
+      :events (map scan-message events)
       :methods (struct
                  :set-handler proxy/set-handler
                  :set-user-data proxy/set-user-data
@@ -168,7 +167,7 @@
                  # replace the proxy/destroy method.
                  ;(mapcat request-method requests (range (length requests))))}])
 
-  (struct ;(mapcat scan-interface interfaces)))
+  (freeze (struct ;(mapcat scan-interface interfaces))))
 
 (defn scan
   "Reads Wayland protocol XML files to generate the interfaces table for (wayland/connect)"
