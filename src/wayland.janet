@@ -148,7 +148,7 @@
                      constructor ~(keyword ,((get constructor 1) :interface)))
                   ,(if generic-constructor 'version 0)
                   ,(if (= (attrs :type) "destructor") {:destroy true} {})
-                  ,(tuple/brackets ;(mapcat request-args args)))))])
+                  [,;(mapcat request-args args)])))])
 
     [current-interface
      {:version (assert (scan-number (attrs :version)))
