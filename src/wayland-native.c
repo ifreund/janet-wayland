@@ -350,7 +350,11 @@ static struct wl_interface *jwl_get_wl_interface(JanetStruct interfaces,
 		return janet_unwrap_abstract(existing);
 	}
 
-	JanetStruct interface = janet_unwrap_struct(janet_struct_get(interfaces, namev));
+	Janet interfacev = janet_struct_get(interfaces, namev);
+	if (!janet_checktype(interfacev, JANET_STRUCT)) {
+		janet_panicf("unknown interface \"%s\"", janet_unwrap_keyword(namev));
+	}
+	JanetStruct interface = janet_unwrap_struct(interfacev);
 
 	struct wl_interface *wl = janet_abstract(&jwl_interface_type, sizeof(struct wl_interface));
 	if (wl == NULL) {
