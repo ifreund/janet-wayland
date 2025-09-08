@@ -1,6 +1,6 @@
 # janet-wayland
 
-Ergonomic Wayland protocol scanner and libwayland bindings for Janet.
+Ergonomic Wayland protocol scanner and libwayland bindings for [Janet](https://janet-lang.org).
 
 The main repository is on [codeberg](https://codeberg.org/ifreund/janet-wayland),
 which is where the issue tracker may be found and where contributions are accepted.
