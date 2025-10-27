@@ -10,11 +10,10 @@ and [github](https://github.com/ifreund/janet-wayland).
 
 ## Installation
 
-Currently janet-wayland requires a
-[libwayland patch](https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/485)
-that has not yet been merged at the time of this writing.
+Janet-wayland requires a [libwayland patch](https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/485)
+that has landed in main but not yet been included in a libwayland release at the time of this writing.
 
-With a patched version of libwayland installed on the system, run:
+With a version of libwayland including that patch installed on the system, run:
 
 ```
 janet-pm install https://codeberg.org/ifreund/janet-wayland
