@@ -1,7 +1,7 @@
 (import lemongrass)
 (import spork/sh)
 
-(import ./wayland-native :prefix "" :export true)
+(import wayland-native :prefix "" :export true)
 
 (defn display/dispatch [display]
   (display/send-recv display)
