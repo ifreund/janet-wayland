@@ -1,10 +1,14 @@
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <janet.h>
 #include <wayland-client-core.h>
@@ -13,6 +17,86 @@
 
 // From libwayland's wayland-private.h
 #define WL_CLOSURE_MAX_ARGS 20
+
+const JanetAbstractType jwl_memfd_type;
+struct jwl_memfd {
+	int fd;
+};
+
+static void jwl_memfd_close_impl(struct jwl_memfd *memfd) {
+	if (memfd->fd >= 0) {
+		close(memfd->fd);
+		memfd->fd = -1;
+	}
+}
+
+static int jwl_memfd_gc(void *p, size_t len) {
+	(void)len;
+	struct jwl_memfd *memfd = p;
+	jwl_memfd_close_impl(memfd);
+	return 0;
+}
+
+JANET_FN(jwl_memfd_from_string,
+		"(wayland/memfd/from-string string)",
+		"") {
+	janet_fixarity(argc, 1);
+	JanetString string = janet_getstring(argv, 0);
+	struct jwl_memfd *memfd = janet_abstract(&jwl_memfd_type, sizeof(struct jwl_memfd));
+	memfd->fd = memfd_create("janet-wayland", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+	if (memfd->fd < 0) {
+		janet_panicf("memfd_create failed: %s", strerror(errno));
+	}
+	if (ftruncate(memfd->fd, janet_string_length(string)) < 0) {
+		jwl_memfd_close_impl(memfd);
+		janet_panicf("ftruncate failed: %s", strerror(errno));
+	}
+	void *data = mmap(NULL, janet_string_length(string),
+			PROT_READ | PROT_WRITE, MAP_SHARED, memfd->fd, 0);
+	if (data == MAP_FAILED) {
+		jwl_memfd_close_impl(memfd);
+		janet_panicf("mmap failed: %s", strerror(errno));
+	}
+	memcpy(data, string, janet_string_length(string));
+	if (munmap(data, janet_string_length(string)) < 0) {
+		jwl_memfd_close_impl(memfd);
+		janet_panicf("munmap failed: %s", strerror(errno));
+	}
+	if (fcntl(memfd->fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW |
+			F_SEAL_WRITE | F_SEAL_SEAL) < 0) {
+		jwl_memfd_close_impl(memfd);
+		janet_panicf("fcntl failed: %s", strerror(errno));
+	}
+	return janet_wrap_abstract(memfd);
+}
+
+JANET_FN(jwl_memfd_close,
+		"(wayland/memfd/close memfd)",
+		"") {
+	janet_fixarity(argc, 1);
+	struct jwl_memfd *memfd = janet_getabstract(argv, 1, &jwl_memfd_type);
+	jwl_memfd_close_impl(memfd);
+	return janet_wrap_nil();
+}
+
+static JanetMethod jwl_memfd_methods[] = {
+    {"close", jwl_memfd_close },
+    {NULL, NULL}
+};
+
+static int jwl_memfd_get(void *p, Janet key, Janet *out) {
+    (void) p;
+    if (!janet_checktype(key, JANET_KEYWORD))
+        return 0;
+    return janet_getmethod(janet_unwrap_keyword(key), jwl_memfd_methods, out);
+}
+
+const JanetAbstractType jwl_memfd_type = {
+	"wayland/memfd",
+	jwl_memfd_gc,
+	NULL, // gc_mark
+	jwl_memfd_get,
+};
 
 static int jwl_interface_gc(void *p, size_t len) {
 	(void)len;
@@ -511,7 +595,15 @@ JANET_FN(jwl_proxy_request_raw,
 			break;
 		}
 		case 'h':
-			wl_args[i] = (union wl_argument){ .h = janet_getinteger(args, i) };
+			if (janet_checkabstract(args[i], &jwl_memfd_type)) {
+				struct jwl_memfd *memfd = janet_unwrap_abstract(args[i]);
+				if (memfd->fd < 0) {
+					janet_panic("memfd already closed");
+				}
+				wl_args[i] = (union wl_argument){ .h = memfd->fd };
+			} else {
+				wl_args[i] = (union wl_argument){ .h = janet_getinteger(args, i) };
+			}
 			break;
 		default:
 			assert(false);
@@ -890,6 +982,8 @@ JANET_MODULE_ENTRY(JanetTable *env) {
 		JANET_REG("proxy/get-user-data", jwl_proxy_get_user_data),
 		JANET_REG("proxy/request-raw", jwl_proxy_request_raw),
 		JANET_REG("proxy/destroy", jwl_proxy_destroy),
+		JANET_REG("memfd/from-string", jwl_memfd_from_string),
+		JANET_REG("memfd/close", jwl_memfd_close),
 		JANET_REG_END,
 	};
 	janet_cfuns_ext(env, "wayland-native", cfuns);
