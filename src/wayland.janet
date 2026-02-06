@@ -74,7 +74,7 @@
   (def interfaces
     (->> paths
          (mapcat (fn [path] (->> (slurp path)
-                                 (lemongrass/markup->janet)
+                                 (lemongrass/markup->janet :html? false)
                                  (filter |(= (first $) :protocol)))))
          (mapcat (fn [[_ attrs & protocol]]
                    (->> protocol (filter |(= (first $) :interface)))))))
