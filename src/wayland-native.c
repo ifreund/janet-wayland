@@ -943,6 +943,9 @@ JANET_FN(jwl_connect,
 	JanetStruct interfaces = janet_getstruct(argv, 0);
 	const char *name = janet_optcstring(argv, argc, 1, NULL);
 
+	if (janet_checktype(janet_struct_get(interfaces, janet_ckeywordv("wl_display")), JANET_NIL)) {
+		janet_panicf("invalid interfaces table, missing wl_display");
+	}
 	for (int32_t i = 0; i < janet_struct_length(interfaces); i++) {
 		if (janet_checktype(interfaces[i].key, JANET_NIL)) {
 			continue; // empty slot
