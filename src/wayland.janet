@@ -73,9 +73,9 @@
 (defn- scan-paths [paths]
   (def interfaces
     (->> paths
-         (mapcat (fn [path] (->> (slurp path)
-                                 (lemongrass/markup->janet :html? false)
-                                 (filter |(= (first $) :protocol)))))
+         (mapcat (fn [path] (as-> (slurp path) it
+                                  (lemongrass/markup->janet it :html? false)
+                                  (filter |(= (first $) :protocol) it))))
          (mapcat (fn [[_ attrs & protocol]]
                    (->> protocol (filter |(= (first $) :interface)))))))
 
