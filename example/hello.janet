@@ -46,17 +46,21 @@
                                           (:commit surface)))))
 
   (var running true)
+  (var configured false)
   (:set-handler xdg-toplevel
                 (fn [event]
                   (match event
                     [:configure w h] (let [w (if (= w 0) 42 w)
                                            h (if (= h 0) 42 h)]
                                        (:set-destination viewport w h)
-                                       (:commit surface))
+                                       (:commit surface)
+                                       (set configured true))
                     [:close] (set running false))))
 
   (:commit surface)
-  (:roundtrip display)
+
+  (while (not configured)
+    (:dispatch display))
 
   (:attach surface buffer 0 0)
   (:commit surface)
