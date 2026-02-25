@@ -38,23 +38,22 @@
   (def xdg-surface (:get-xdg-surface wm-base surface))
   (def xdg-toplevel (:get-toplevel xdg-surface))
 
+  (var configured false)
   (:set-handler xdg-surface
                 (fn [event]
                   (match event
                     [:configure serial] (do
                                           (:ack-configure xdg-surface serial)
-                                          (:commit surface)))))
+                                          (:commit surface)
+                                          (set configured true)))))
 
   (var running true)
-  (var configured false)
   (:set-handler xdg-toplevel
                 (fn [event]
                   (match event
                     [:configure w h] (let [w (if (= w 0) 42 w)
                                            h (if (= h 0) 42 h)]
-                                       (:set-destination viewport w h)
-                                       (:commit surface)
-                                       (set configured true))
+                                       (:set-destination viewport w h))
                     [:close] (set running false))))
 
   (:commit surface)
